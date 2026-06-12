@@ -1,1 +1,3 @@
 - [SuportyHub project](suportyhub.md) — WhatsApp helpdesk in Brazilian Portuguese; SQLite via node:sqlite, Baileys, SSE, React+Vite+shadcn
+- [Supplier conversation flow](supplier-conversations.md) — supplier messages saved to DB; manager/admin-only page at /supplier-conversations.
+- [Greeting message fix](greeting-fix.md) — in_progress greeting removed "Atenciosamente" from notifyStatusChange; AI via OpenRouter unavailable on free tier.

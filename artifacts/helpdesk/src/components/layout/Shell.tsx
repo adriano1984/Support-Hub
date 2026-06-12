@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Ticket, MessageSquare, Building2, Layers, Tags,
   Smartphone, Menu, UserCheck, LogOut, ChevronDown, MessageCircleCode,
   ShieldCheck, ClipboardList, Bell, Search, X, Circle, Users2,
-  AlertTriangle, Monitor, Home as HomeIcon, KeyRound, Loader2,
+  AlertTriangle, Monitor, Home as HomeIcon, KeyRound, Loader2, Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -53,6 +53,12 @@ const navItems: { group: string; items: NavItem[] }[] = [
       { title: "Usuários", href: "/settings/usuarios", icon: UserCheck },
       { title: "Papéis e Permissões", href: "/settings/roles", icon: ShieldCheck },
       { title: "Auditoria", href: "/settings/audit", icon: ClipboardList },
+    ],
+  },
+  {
+    group: "Fornecedores",
+    items: [
+      { title: "Conversas de Fornecedores", href: "/supplier-conversations", icon: Package },
     ],
   },
 ];
@@ -390,9 +396,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col gap-4 flex-1">
         {(() => {
           const isAnalyst = user && ["technician", "attendant"].includes(user.role);
+          const isManagerOrAdmin = user && ["admin", "manager"].includes(user.role);
           const visible = isAnalyst
             ? [{ group: "Principal", items: navItems[0].items.filter(i => i.href === "/home" || i.href === "/tickets") }]
-            : navItems;
+            : navItems.filter(g => g.group !== "Fornecedores" || isManagerOrAdmin);
           return visible.map((group) => (
             <div key={group.group} className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold uppercase text-sidebar-foreground/50 px-2">

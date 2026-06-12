@@ -11,7 +11,7 @@ import { Boom } from "@hapi/boom";
 import path from "path";
 import fs from "fs";
 import qrcode from "qrcode";
-import { db, nextTicketNumber, getInactivityMinutes, savePreTicketMessage } from "./database";
+import { db, nextTicketNumber, getInactivityMinutes, savePreTicketMessage, getOrCreateSupplierConversation, saveSupplierMessage } from "./database";
 import { logger } from "./logger";
 import { processarCliente } from "../overlay";
 import { broadcastEvent } from "./sse";
@@ -361,6 +361,7 @@ interface ConvState {
   pushName: string | null;
   clientName: string | null;    // nome confirmado (digitado ou identificado)
   ticketId: number | null;
+  supplierConvId: number | null; // ID da conversa de fornecedor ativa
   branchId: number | null;
   departmentId: number | null;
   categoryId: number | null;
@@ -384,7 +385,7 @@ const inactivityGeneration = new Map<string, number>();
 
 function getConvState(phone: string): ConvState {
   if (!convStates.has(phone)) {
-    convStates.set(phone, { step: "idle", mode: "bot", pushName: null, clientName: null, ticketId: null, branchId: null, departmentId: null, categoryId: null, askNameBeforeMenu: false });
+    convStates.set(phone, { step: "idle", mode: "bot", pushName: null, clientName: null, ticketId: null, supplierConvId: null, branchId: null, departmentId: null, categoryId: null, askNameBeforeMenu: false });
   }
   return convStates.get(phone)!;
 }
@@ -674,9 +675,14 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
   }
 
   // ── MODE/STEP: SUPPLIER ───────────────────────────────────────────────────
-  // Supplier mode = canal de conversa livre. Nenhum chamado é gerado,
-  // o bot não responde. O atendimento acontece diretamente pelo WhatsApp.
+  // Supplier mode = canal de conversa livre. Mensagens salvas no DB.
+  // Nenhum chamado é gerado. Gestores/admins visualizam pelo painel.
   if (conv.mode === "supplier" || conv.step === "supplier") {
+    const supConvId = conv.supplierConvId ?? getOrCreateSupplierConversation(phone, nome || null);
+    if (!conv.supplierConvId) conv.supplierConvId = supConvId;
+    const { url: mediaUrl } = await downloadAndSaveMedia(sock, msg);
+    saveSupplierMessage(supConvId, "inbound", msgType, msgContent, nome || "Fornecedor", mediaUrl);
+    broadcastEvent("supplier:message", { conversationId: supConvId });
     return;
   }
 
@@ -737,8 +743,14 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
       conv.step = "supplier";
       conv.mode = "supplier";
       conv.ticketId = null;
+      const supConvId = getOrCreateSupplierConversation(phone, nome || null);
+      conv.supplierConvId = supConvId;
       const welcomeMsg = getAutoMessage("supplier_welcome");
-      if (welcomeMsg) await sendMessage(phone, welcomeMsg);
+      if (welcomeMsg) {
+        await sendMessage(phone, welcomeMsg);
+        saveSupplierMessage(supConvId, "outbound", "text", welcomeMsg, "Bot");
+      }
+      broadcastEvent("supplier:new", { conversationId: supConvId });
     } else {
       const invalidMsg = getAutoMessage("invalid_menu");
       if (invalidMsg) await sendMessage(phone, invalidMsg);
@@ -937,8 +949,7 @@ export async function notifyStatusChange(
     const msg =
       `Olá, ${getGreeting()}!\n\n` +
       `Sou ${nome}, analista responsável pelo seu chamado.\n\n` +
-      `A partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação.\n\n\n` +
-      `Atenciosamente,\n${nome}`;
+      `A partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação.`;
     await sendMessage(ticket.whatsapp_phone, msg);
     return;
   }
@@ -958,4 +969,23 @@ export async function notifyStatusChange(
     }
     return;
   }
+}
+
+// ─── Envio de mensagem para fornecedor (chamado pela rota de API) ──────────────
+
+export async function sendSupplierMessage(
+  phone: string,
+  text: string,
+  agentName: string,
+  conversationId?: number
+): Promise<boolean> {
+  const conv = getConvState(phone);
+  const convId = conversationId ?? conv.supplierConvId ?? getOrCreateSupplierConversation(phone, conv.clientName ?? conv.pushName);
+  if (!conv.supplierConvId) conv.supplierConvId = convId;
+  const sent = await sendMessage(phone, text);
+  if (sent) {
+    saveSupplierMessage(convId, "outbound", "text", text, agentName);
+    broadcastEvent("supplier:message", { conversationId: convId });
+  }
+  return sent;
 }

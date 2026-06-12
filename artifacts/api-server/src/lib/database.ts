@@ -139,6 +139,26 @@ export function initDatabase() {
       ip TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS supplier_conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      client_name TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES supplier_conversations(id),
+      direction TEXT NOT NULL DEFAULT 'inbound',
+      type TEXT NOT NULL DEFAULT 'text',
+      content TEXT NOT NULL,
+      sender_name TEXT,
+      media_url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Migrações seguras — não afetam dados existentes
@@ -194,6 +214,19 @@ export function initDatabase() {
     }
   } catch { /* não crítico */ }
 
+  // Migração segura: atualizar resposta pronta "Assumindo chamado" para o novo formato
+  try {
+    const cr = db.prepare("SELECT id, content FROM canned_responses WHERE title = 'Assumindo chamado'").get() as { id: number; content: string } | undefined;
+    if (cr && cr.content.includes("{nome_cliente}")) {
+      db.prepare("UPDATE canned_responses SET content = ? WHERE id = ?")
+        .run(
+          "Olá, {saudacao}!\n\nSou {nome_atendente}, analista responsável pelo seu chamado.\n\nA partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação.",
+          cr.id
+        );
+      logger.info("Canned response 'Assumindo chamado' atualizada para novo formato");
+    }
+  } catch { /* não crítico */ }
+
   logger.info("Database initialized");
 }
 
@@ -216,6 +249,35 @@ export function savePreTicketMessage(phone: string, direction: string, type: str
     db.prepare(
       "INSERT INTO pre_ticket_messages (phone, direction, type, content, sender_name) VALUES (?, ?, ?, ?, ?)"
     ).run(phone, direction, type, content, senderName ?? null);
+  } catch { /* não crítico */ }
+}
+
+/** Obtém ou cria conversa de fornecedor em aberto para o telefone */
+export function getOrCreateSupplierConversation(phone: string, clientName?: string | null): number {
+  const existing = db.prepare(
+    "SELECT id FROM supplier_conversations WHERE phone = ? AND status != 'closed' ORDER BY created_at DESC LIMIT 1"
+  ).get(phone) as { id: number } | undefined;
+  if (existing) return existing.id;
+  const result = db.prepare(
+    "INSERT INTO supplier_conversations (phone, client_name) VALUES (?, ?)"
+  ).run(phone, clientName ?? null);
+  return result.lastInsertRowid as number;
+}
+
+/** Salva mensagem numa conversa de fornecedor */
+export function saveSupplierMessage(
+  conversationId: number,
+  direction: string,
+  type: string,
+  content: string,
+  senderName?: string | null,
+  mediaUrl?: string | null
+): void {
+  try {
+    db.prepare(
+      "INSERT INTO supplier_messages (conversation_id, direction, type, content, sender_name, media_url) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(conversationId, direction, type, content, senderName ?? null, mediaUrl ?? null);
+    db.prepare("UPDATE supplier_conversations SET updated_at = datetime('now') WHERE id = ?").run(conversationId);
   } catch { /* não crítico */ }
 }
 
@@ -302,7 +364,7 @@ function seedCannedResponses() {
 
   const responses = [
     { category: "Saudação", title: "Boas-vindas", content: "Olá, {nome_cliente}! Sou {nome_atendente} e estou aqui para ajudá-lo. Como posso auxiliar você hoje?" },
-    { category: "Atendimento", title: "Assumindo chamado", content: "Olá, {nome_cliente}! Meu nome é {nome_atendente} e vou assumir seu atendimento a partir deste momento. O número do seu chamado é *{numero_chamado}*." },
+    { category: "Atendimento", title: "Assumindo chamado", content: "Olá, {saudacao}!\n\nSou {nome_atendente}, analista responsável pelo seu chamado.\n\nA partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação." },
     { category: "Atendimento", title: "Aguardando informações", content: "Olá, {nome_cliente}! Para darmos continuidade ao seu chamado *{numero_chamado}*, precisamos de mais informações. Poderia nos fornecer os detalhes solicitados?" },
     { category: "Suporte Técnico", title: "Verificando problema", content: "Prezado(a) {nome_cliente}, estou verificando o problema relatado no chamado *{numero_chamado}*. Em breve retornarei com uma solução." },
     { category: "Suporte Técnico", title: "Solução aplicada", content: "Prezado(a) {nome_cliente}, aplicamos a solução para o problema do chamado *{numero_chamado}*. Por favor, verifique se o problema foi resolvido e nos confirme." },

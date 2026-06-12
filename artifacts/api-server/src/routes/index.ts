@@ -13,6 +13,7 @@ import auditRouter from "./audit";
 import inventoryRouter from "./inventory";
 import stockRouter from "./stock";
 import eventsRouter from "./events";
+import supplierConversationsRouter from "./supplier-conversations";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(auditRouter);
 router.use(inventoryRouter);
 router.use(stockRouter);
 router.use(eventsRouter);
+router.use(supplierConversationsRouter);
 
 export default router;
