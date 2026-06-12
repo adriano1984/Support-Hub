@@ -3,13 +3,26 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Support Hub API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: branches
+    description: Branch management
+  - name: departments
+    description: Department management
+  - name: categories
+    description: Category management
+  - name: autoMessages
+    description: Automatic message management
+  - name: whatsapp
+    description: WhatsApp integration
+  - name: tickets
+    description: Ticket management
+
 paths:
   /healthz:
     get:
@@ -24,6 +37,444 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Branches ────────────────────────────────────────────────────────────────
+  /settings/branches:
+    get:
+      operationId: listBranches
+      tags: [branches]
+      summary: List all branches
+      responses:
+        "200":
+          description: List of branches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Branch"
+    post:
+      operationId: createBranch
+      tags: [branches]
+      summary: Create a branch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BranchInput"
+      responses:
+        "201":
+          description: Created branch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+
+  /settings/branches/{id}:
+    put:
+      operationId: updateBranch
+      tags: [branches]
+      summary: Update a branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BranchInput"
+      responses:
+        "200":
+          description: Updated branch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+    delete:
+      operationId: deleteBranch
+      tags: [branches]
+      summary: Delete a branch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── Departments ─────────────────────────────────────────────────────────────
+  /settings/departments:
+    get:
+      operationId: listDepartments
+      tags: [departments]
+      summary: List all departments
+      responses:
+        "200":
+          description: List of departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Department"
+    post:
+      operationId: createDepartment
+      tags: [departments]
+      summary: Create a department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepartmentInput"
+      responses:
+        "201":
+          description: Created department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+
+  /settings/departments/{id}:
+    put:
+      operationId: updateDepartment
+      tags: [departments]
+      summary: Update a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepartmentInput"
+      responses:
+        "200":
+          description: Updated department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+    delete:
+      operationId: deleteDepartment
+      tags: [departments]
+      summary: Delete a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── Categories ──────────────────────────────────────────────────────────────
+  /settings/categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List all categories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+    post:
+      operationId: createCategory
+      tags: [categories]
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "201":
+          description: Created category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+
+  /settings/categories/{id}:
+    put:
+      operationId: updateCategory
+      tags: [categories]
+      summary: Update a category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "200":
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+    delete:
+      operationId: deleteCategory
+      tags: [categories]
+      summary: Delete a category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── Auto Messages ────────────────────────────────────────────────────────────
+  /settings/messages:
+    get:
+      operationId: listAutoMessages
+      tags: [autoMessages]
+      summary: List all automatic messages
+      responses:
+        "200":
+          description: List of auto messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutoMessage"
+    post:
+      operationId: createAutoMessage
+      tags: [autoMessages]
+      summary: Create an automatic message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoMessageInput"
+      responses:
+        "201":
+          description: Created auto message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoMessage"
+
+  /settings/messages/{id}:
+    put:
+      operationId: updateAutoMessage
+      tags: [autoMessages]
+      summary: Update an automatic message
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoMessageInput"
+      responses:
+        "200":
+          description: Updated auto message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoMessage"
+    delete:
+      operationId: deleteAutoMessage
+      tags: [autoMessages]
+      summary: Delete an automatic message
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── WhatsApp ─────────────────────────────────────────────────────────────────
+  /whatsapp/status:
+    get:
+      operationId: getWhatsappStatus
+      tags: [whatsapp]
+      summary: Get WhatsApp connection status
+      responses:
+        "200":
+          description: WhatsApp status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsappStatus"
+
+  /whatsapp/reconnect:
+    post:
+      operationId: reconnectWhatsapp
+      tags: [whatsapp]
+      summary: Reconnect WhatsApp
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /whatsapp/disconnect:
+    post:
+      operationId: disconnectWhatsapp
+      tags: [whatsapp]
+      summary: Disconnect WhatsApp
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # ─── Tickets ──────────────────────────────────────────────────────────────────
+  /tickets/{id}:
+    get:
+      operationId: getTicket
+      tags: [tickets]
+      summary: Get ticket detail with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Ticket detail with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketDetail"
+        "404":
+          description: Not found
+
+  /tickets/{id}/status:
+    patch:
+      operationId: updateTicketStatus
+      tags: [tickets]
+      summary: Update ticket status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketStatusUpdate"
+      responses:
+        "200":
+          description: Updated ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+
+  /tickets/{id}/reply:
+    post:
+      operationId: replyToTicket
+      tags: [tickets]
+      summary: Reply to a ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketReplyInput"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /tickets/{id}/notes:
+    post:
+      operationId: addTicketNote
+      tags: [tickets]
+      summary: Add an internal note to a ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketNoteInput"
+      responses:
+        "201":
+          description: Created note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketMessage"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +485,313 @@ components:
       required:
         - status
 
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+        - success
+
+    # ─── Branch ────────────────────────────────────────────────────────────────
+    Branch:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - id
+        - name
+        - active
+
+    BranchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - name
+
+    # ─── Department ────────────────────────────────────────────────────────────
+    Department:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - id
+        - name
+        - active
+
+    DepartmentInput:
+      type: object
+      properties:
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - name
+
+    # ─── Category ──────────────────────────────────────────────────────────────
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - id
+        - name
+        - active
+
+    CategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - name
+
+    # ─── Auto Message ──────────────────────────────────────────────────────────
+    AutoMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        trigger:
+          type: string
+          enum:
+            - welcome
+            - invalid_menu
+            - ask_name
+            - ask_branch
+            - ask_department
+            - ask_category
+            - ask_description
+            - ticket_opened
+            - status_in_progress
+            - status_resolved
+            - status_closed
+            - thank_you
+        content:
+          type: string
+        active:
+          type: boolean
+      required:
+        - id
+        - trigger
+        - content
+        - active
+
+    AutoMessageInput:
+      type: object
+      properties:
+        trigger:
+          type: string
+          enum:
+            - welcome
+            - invalid_menu
+            - ask_name
+            - ask_branch
+            - ask_department
+            - ask_category
+            - ask_description
+            - ticket_opened
+            - status_in_progress
+            - status_resolved
+            - status_closed
+            - thank_you
+        content:
+          type: string
+        active:
+          type: boolean
+      required:
+        - trigger
+        - content
+
+    # ─── WhatsApp ──────────────────────────────────────────────────────────────
+    WhatsappStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        status:
+          type: string
+        qrCode:
+          type: string
+          nullable: true
+        phoneNumber:
+          type: string
+          nullable: true
+        profileName:
+          type: string
+          nullable: true
+      required:
+        - connected
+        - status
+
+    # ─── Ticket ────────────────────────────────────────────────────────────────
+    TicketStatus:
+      type: string
+      enum:
+        - open
+        - in_progress
+        - waiting_client
+        - waiting_analyst
+        - closed
+
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticketNumber:
+          type: string
+        whatsappPhone:
+          type: string
+        clientName:
+          type: string
+          nullable: true
+        branchId:
+          type: integer
+          nullable: true
+        branchName:
+          type: string
+          nullable: true
+        departmentId:
+          type: integer
+          nullable: true
+        departmentName:
+          type: string
+          nullable: true
+        categoryId:
+          type: integer
+          nullable: true
+        categoryName:
+          type: string
+          nullable: true
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        assignedTo:
+          type: integer
+          nullable: true
+        assigneeName:
+          type: string
+          nullable: true
+        reopenCount:
+          type: integer
+        firstResponseAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        lastMessageAt:
+          type: string
+          nullable: true
+        botMode:
+          type: string
+          nullable: true
+      required:
+        - id
+        - ticketNumber
+        - whatsappPhone
+        - description
+        - status
+        - createdAt
+        - updatedAt
+
+    TicketMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticketId:
+          type: integer
+        direction:
+          type: string
+        type:
+          type: string
+        content:
+          type: string
+        mediaUrl:
+          type: string
+          nullable: true
+        senderName:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+      required:
+        - id
+        - ticketId
+        - direction
+        - type
+        - content
+        - createdAt
+
+    TicketDetail:
+      type: object
+      properties:
+        ticket:
+          $ref: "#/components/schemas/Ticket"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketMessage"
+      required:
+        - ticket
+        - messages
+
+    TicketStatusUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - open
+            - in_progress
+            - waiting_client
+            - waiting_analyst
+            - closed
+        note:
+          type: string
+      required:
+        - status
+
+    TicketReplyInput:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    TicketNoteInput:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content

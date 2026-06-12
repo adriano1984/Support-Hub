@@ -1,0 +1,1 @@
+- [SuportyHub project](suportyhub.md) — WhatsApp helpdesk in Brazilian Portuguese; SQLite via node:sqlite, Baileys, SSE, React+Vite+shadcn
