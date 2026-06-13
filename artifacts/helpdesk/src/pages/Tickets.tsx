@@ -15,6 +15,7 @@ import {
 import { useDebounce } from "@/hooks/use-debounce";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTicketNavigation } from "@/contexts/TicketNavigationContext";
 
 interface FilterState {
   status: string;
@@ -85,6 +86,7 @@ export default function Tickets() {
   const { user } = useAuth();
   const isAnalyst = ["technician", "attendant"].includes(user?.role ?? "");
   const { favs, toggle } = useFavorites();
+  const { setTicketIds } = useTicketNavigation();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 400);
@@ -138,7 +140,11 @@ export default function Tickets() {
     if (!isAnalyst && quickFilter === "awaiting") params.status = "open";
 
     API.listTickets(params)
-      .then(data => { setTickets(data.tickets); setTotal(data.total); })
+      .then(data => {
+        setTickets(data.tickets);
+        setTotal(data.total);
+        setTicketIds(data.tickets.map((t: Ticket) => t.id));
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [debouncedSearch, filters, page, quickFilter, user, sseRefresh]);

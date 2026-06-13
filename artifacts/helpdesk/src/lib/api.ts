@@ -58,7 +58,14 @@ export const API = {
   getActivityLog: (ticketId: number) =>
     apiFetch<ActivityEntry[]>(`/api/tickets/${ticketId}/activity`),
   getAiSuggestion: (ticketId: number) =>
-    apiFetch<{ suggestion: string }>(`/api/tickets/${ticketId}/ai-suggest`, { method: "POST" }),
+    apiFetch<{
+      suggestion: string;
+      source?: "groq" | "history" | "rules";
+      urgency?: "low" | "medium" | "high";
+      similarCount?: number;
+      keywords?: string[];
+      similarTickets?: Array<{ id: number; ticketNumber: string; score: number }>;
+    }>(`/api/tickets/${ticketId}/ai-suggest`, { method: "POST" }),
 
   // Auth extra
   changePassword: (currentPassword: string, newPassword: string) =>

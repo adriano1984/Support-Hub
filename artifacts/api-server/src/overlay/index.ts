@@ -1,4 +1,5 @@
 export { gerarIA } from "./ai";
+export { analyzeTicketLocally } from "./ai-local";
 export { ativarSLA, resetarSLA, hasSla } from "./sla";
 export { formatarAnalista } from "./format";
 export { saudacao, detectaGatilho } from "./rules";

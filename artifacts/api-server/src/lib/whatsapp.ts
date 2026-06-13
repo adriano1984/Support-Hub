@@ -731,12 +731,33 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
         savePreTicketMessage(phone, "outbound", "text", askNameMsg, "Bot");
         startPreTicketInactivity(phone);
       } else {
-        conv.step = "branch";
-        const branches = db.prepare("SELECT id, name FROM branches WHERE active = 1 ORDER BY id").all() as Array<{ id: number; name: string }>;
-        const branchMsg = formatListMessage(getAutoMessage("ask_branch"), branches);
-        await sendMessage(phone, branchMsg);
-        savePreTicketMessage(phone, "outbound", "text", branchMsg, "Bot");
-        startPreTicketInactivity(phone);
+        // ── Verificar se cliente já tem chamado anterior (cliente recorrente) ──
+        const lastTicket = db.prepare(
+          "SELECT branch_id, department_id, category_id FROM tickets WHERE whatsapp_phone = ? AND branch_id IS NOT NULL AND department_id IS NOT NULL AND category_id IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+        ).get(phone) as { branch_id: number; department_id: number; category_id: number } | undefined;
+
+        if (lastTicket) {
+          conv.branchId = lastTicket.branch_id;
+          conv.departmentId = lastTicket.department_id;
+          conv.categoryId = lastTicket.category_id;
+          conv.step = "description";
+
+          const branchRow = db.prepare("SELECT name FROM branches WHERE id = ?").get(lastTicket.branch_id) as { name: string } | undefined;
+          const deptRow = db.prepare("SELECT name FROM departments WHERE id = ?").get(lastTicket.department_id) as { name: string } | undefined;
+          const catRow = db.prepare("SELECT name FROM categories WHERE id = ?").get(lastTicket.category_id) as { name: string } | undefined;
+
+          const skipMsg = `Olá, ${nome}! 👋\n\nIdentifiquei seu cadastro. Manteremos as mesmas informações do seu último chamado:\n\n📍 *Filial:* ${branchRow?.name ?? "—"}\n🏢 *Departamento:* ${deptRow?.name ?? "—"}\n🏷️ *Categoria:* ${catRow?.name ?? "—"}\n\nPor favor, descreva o problema ou solicitação:`;
+          await sendMessage(phone, skipMsg);
+          savePreTicketMessage(phone, "outbound", "text", skipMsg, "Bot");
+          startPreTicketInactivity(phone);
+        } else {
+          conv.step = "branch";
+          const branches = db.prepare("SELECT id, name FROM branches WHERE active = 1 ORDER BY id").all() as Array<{ id: number; name: string }>;
+          const branchMsg = formatListMessage(getAutoMessage("ask_branch"), branches);
+          await sendMessage(phone, branchMsg);
+          savePreTicketMessage(phone, "outbound", "text", branchMsg, "Bot");
+          startPreTicketInactivity(phone);
+        }
       }
     } else if (trimmed === "2") {
       clearInactivityTimer(phone);

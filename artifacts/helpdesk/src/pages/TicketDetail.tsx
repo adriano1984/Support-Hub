@@ -1,5 +1,5 @@
 import { useGetTicket, useUpdateTicketStatus, useReplyToTicket, useAddTicketNote, getGetTicketQueryKey, TicketStatusUpdateStatus } from "@workspace/api-client-react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +9,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 import {
   ArrowLeft, Send, StickyNote, FileText, Image as ImageIcon, Music, Video,
   Bot, UserCheck, Store, UserCircle, Loader2, BookText, Search, X,
-  ChevronRight, Star, AlertTriangle, Clock, CheckCircle2, CircleEllipsis,
+  ChevronLeft, ChevronRight, Star, AlertTriangle, Clock, CheckCircle2, CircleEllipsis,
   MessageSquare, Activity, Sparkles, Mic, Square
 } from "lucide-react";
+import { useTicketNavigation } from "@/contexts/TicketNavigationContext";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -319,6 +320,11 @@ export default function TicketDetail() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
   const { isFav, toggle: toggleFav } = useFavorite(ticketId);
+  const [, navigate] = useLocation();
+  const { prevId, nextId, indexOf, ticketIds } = useTicketNavigation();
+  const prev = prevId(ticketId);
+  const next = nextId(ticketId);
+  const pos = indexOf(ticketId);
 
   const { toast } = useToast();
   const [replyText, setReplyText] = useState("");
@@ -329,6 +335,7 @@ export default function TicketDetail() {
   const [assigning, setAssigning] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiMeta, setAiMeta] = useState<{ source?: string; urgency?: string; similarCount?: number; keywords?: string[] } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioSending, setAudioSending] = useState(false);
@@ -385,11 +392,18 @@ export default function TicketDetail() {
   const handleAiSuggest = async () => {
     setAiLoading(true);
     setAiError(null);
+    setAiMeta(null);
     try {
       const result = await API.getAiSuggestion(ticketId);
       const suggestion = result.suggestion.trim();
       setReplyText(suggestion);
       setMode("reply");
+      setAiMeta({
+        source: result.source,
+        urgency: result.urgency,
+        similarCount: result.similarCount,
+        keywords: result.keywords,
+      });
     } catch (err: any) {
       setAiError(err?.message ?? "Erro ao gerar sugestão");
       setTimeout(() => setAiError(null), 5000);
@@ -587,6 +601,32 @@ export default function TicketDetail() {
         <Button variant="ghost" size="icon" asChild>
           <Link href="/tickets"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
+
+        {/* Prev/Next navigation */}
+        {ticketIds.length > 1 && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7"
+              disabled={!prev}
+              onClick={() => prev && navigate(`/tickets/${prev}`)}
+              title="Chamado anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground tabular-nums min-w-[3rem] text-center">
+              {pos >= 0 ? `${pos + 1}/${ticketIds.length}` : ""}
+            </span>
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7"
+              disabled={!next}
+              onClick={() => next && navigate(`/tickets/${next}`)}
+              title="Próximo chamado"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         <div className="flex items-center gap-3 font-semibold flex-1 overflow-hidden min-w-0">
           <span className="truncate">{ticket.ticketNumber} — {ticket.clientName || ticket.whatsappPhone}</span>
           <StatusBadge status={ticket.status as any} />
@@ -749,11 +789,20 @@ export default function TicketDetail() {
                         Sugestão IA
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Gerar resposta sugerida com IA (Groq)</TooltipContent>
+                    <TooltipContent>Gerar sugestão com IA (aprende com histórico de chamados)</TooltipContent>
                   </Tooltip>
                 )}
                 {aiError && (
                   <span className="text-xs text-destructive ml-1">{aiError}</span>
+                )}
+                {aiMeta && !aiError && (
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                    {aiMeta.source === "groq" && <span className="text-violet-500 font-medium">Groq</span>}
+                    {aiMeta.source === "history" && <span className="text-emerald-600 font-medium">📚 {aiMeta.similarCount} chamado(s) similar(es)</span>}
+                    {aiMeta.source === "rules" && <span className="text-amber-600 font-medium">🔧 Sugestão por regras</span>}
+                    {aiMeta.urgency === "high" && <span className="text-red-500 font-semibold">• 🔴 Urgente</span>}
+                    {aiMeta.urgency === "medium" && <span className="text-amber-500">• 🟡 Moderado</span>}
+                  </span>
                 )}
                 {!isAnalyst && (
                   <div className="flex md:hidden items-center gap-1 ml-auto">

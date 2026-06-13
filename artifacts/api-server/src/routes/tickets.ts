@@ -7,7 +7,7 @@ import { db, addAuditLog } from "../lib/database";
 import { sendMessage, sendAudioMessage, notifyStatusChange, setConvMode, getConvMode } from "../lib/whatsapp";
 import { parseAuthHeader } from "../lib/auth";
 import { logger } from "../lib/logger";
-import { processarAnalista, gerarIA } from "../overlay";
+import { processarAnalista, gerarIA, analyzeTicketLocally } from "../overlay";
 import { broadcastEvent } from "../lib/sse";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -297,39 +297,46 @@ router.post("/tickets/:id/notes", (req, res): void => {
   res.status(201).json(mapMessage(note));
 });
 
-// ─── AI Suggestion ────────────────────────────────────────────────────────────
+// ─── AI Suggestion ─────────────────────────────────────────────────────────────
+// Tenta Groq primeiro (se GROQ_API_KEY configurada); fallback automático para
+// IA local gratuita que aprende com o histórico de chamados resolvidos.
 router.post("/tickets/:id/ai-suggest", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   const user = parseAuthHeader(req.headers.authorization);
   if (!user) { res.status(401).json({ error: "Não autenticado" }); return; }
 
-  const ticket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
+  const ticket = db.prepare(`
+    SELECT t.*, c.name AS category_name
+    FROM tickets t LEFT JOIN categories c ON t.category_id = c.id
+    WHERE t.id = ?
+  `).get(id) as any;
   if (!ticket) { res.status(404).json({ error: "Chamado não encontrado" }); return; }
 
   const recentMsgs = db.prepare(
-    "SELECT direction, content, sender_name FROM messages WHERE ticket_id = ? ORDER BY created_at DESC LIMIT 8"
+    "SELECT direction, content, sender_name FROM messages WHERE ticket_id = ? ORDER BY created_at ASC LIMIT 20"
   ).all(id) as any[];
 
-  const lastInbound = recentMsgs.find(m => m.direction === "inbound");
-  if (!lastInbound) { res.status(400).json({ error: "Nenhuma mensagem do cliente para analisar" }); return; }
-
-  const contexto = recentMsgs
-    .reverse()
-    .filter(m => m.direction !== "internal")
-    .map(m => `[${m.direction === "inbound" ? "Cliente" : m.sender_name}]: ${m.content}`)
-    .join("\n");
-
-  try {
-    const suggestion = await gerarIA(lastInbound.content, user.name, contexto);
-    res.json({ suggestion });
-  } catch (err: any) {
-    const isNoKey = err?.message?.includes("GROQ_API_KEY");
-    res.status(isNoKey ? 503 : 500).json({
-      error: isNoKey
-        ? "Chave GROQ_API_KEY não configurada. Adicione-a nas variáveis de ambiente."
-        : "Erro ao gerar sugestão. Tente novamente.",
-    });
+  // Try Groq if key is available
+  if (process.env.GROQ_API_KEY) {
+    const lastInbound = [...recentMsgs].reverse().find(m => m.direction === "inbound");
+    if (lastInbound) {
+      const contexto = recentMsgs
+        .filter(m => m.direction !== "internal")
+        .map(m => `[${m.direction === "inbound" ? "Cliente" : m.sender_name}]: ${m.content}`)
+        .join("\n");
+      try {
+        const suggestion = await gerarIA(lastInbound.content, user.name, contexto);
+        res.json({ suggestion, source: "groq" });
+        return;
+      } catch {
+        // fall through to local AI
+      }
+    }
   }
+
+  // Local AI — always available, no API key needed
+  const analysis = analyzeTicketLocally(id, ticket.description ?? "", recentMsgs, ticket.category_name ?? null);
+  res.json(analysis);
 });
 
 // ─── Activity log ─────────────────────────────────────────────────────────────
