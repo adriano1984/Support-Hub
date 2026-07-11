@@ -53,6 +53,7 @@ const navItems: { group: string; items: NavItem[] }[] = [
       { title: "Respostas Prontas", href: "/settings/canned-responses", icon: MessageCircleCode },
       { title: "Usuários", href: "/settings/usuarios", icon: UserCheck },
       { title: "Papéis e Permissões", href: "/settings/roles", icon: ShieldCheck },
+      { title: "Configurações do Sistema", href: "/settings/sistema", icon: KeyRound },
       { title: "Auditoria", href: "/settings/audit", icon: ClipboardList },
     ],
   },

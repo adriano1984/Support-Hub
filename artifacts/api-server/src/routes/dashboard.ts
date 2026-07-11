@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../lib/database";
+import { db, getSetting } from "../lib/database";
 
 const router = Router();
 
@@ -49,12 +49,13 @@ router.get("/dashboard/stats", (req, res) => {
   const reopenedRow = db.prepare(`SELECT COUNT(*) as c FROM tickets t ${baseWhere} AND t.reopen_count > 0`).get() as { c: number };
   const transfersRow = db.prepare(`SELECT COUNT(*) as c FROM activity_log WHERE action = 'assigned' AND detail LIKE '%atribuído a%'`).get() as { c: number };
 
-  // SLA: consider SLA breached if ticket is open/in_progress for > 48h
+  // SLA: consider SLA breached if ticket is open/in_progress for > sla_hours (configurable)
+  const slaHours = parseInt(getSetting("sla_hours", "48"));
   const slaTotal = (db.prepare(`SELECT COUNT(*) as c FROM tickets t ${baseWhere}`).get() as { c: number }).c;
   const slaBreached = (db.prepare(`
     SELECT COUNT(*) as c FROM tickets t ${baseWhere}
     AND t.status IN ('open','in_progress')
-    AND (julianday('now') - julianday(t.created_at)) * 24 > 48
+    AND (julianday('now') - julianday(t.created_at)) * 24 > ${slaHours}
   `).get() as { c: number }).c;
   const slaMet = slaTotal - slaBreached;
   const slaPercent = slaTotal > 0 ? Math.round((slaMet / slaTotal) * 100) : 100;
@@ -132,13 +133,16 @@ router.get("/dashboard/stats", (req, res) => {
 });
 
 router.get("/dashboard/alerts", (_req, res) => {
+  const slaH = parseInt(getSetting("sla_hours", "48"));
+  const nearSlaH = Math.round(slaH * 0.75); // "próximo" = 75% do SLA
+
   const slaBreached = db.prepare(`
     SELECT t.id, t.ticket_number, t.client_name, t.status, t.created_at, t.updated_at,
            b.name as branch_name, assignee_name,
            ROUND((julianday('now') - julianday(t.created_at)) * 24, 1) as hours_open
     FROM tickets t LEFT JOIN branches b ON t.branch_id = b.id
     WHERE t.status IN ('open','in_progress')
-    AND (julianday('now') - julianday(t.created_at)) * 24 > 48
+    AND (julianday('now') - julianday(t.created_at)) * 24 > ${slaH}
     ORDER BY hours_open DESC LIMIT 20
   `).all() as any[];
 
@@ -148,7 +152,7 @@ router.get("/dashboard/alerts", (_req, res) => {
            ROUND((julianday('now') - julianday(t.created_at)) * 24, 1) as hours_open
     FROM tickets t LEFT JOIN branches b ON t.branch_id = b.id
     WHERE t.status IN ('open','in_progress')
-    AND (julianday('now') - julianday(t.created_at)) * 24 BETWEEN 36 AND 48
+    AND (julianday('now') - julianday(t.created_at)) * 24 BETWEEN ${nearSlaH} AND ${slaH}
     ORDER BY hours_open DESC LIMIT 20
   `).all() as any[];
 

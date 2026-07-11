@@ -175,6 +175,34 @@ export function initDatabase() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('ticket_counter', '9')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('inactivity_minutes', '30')").run();
 
+  // ── Configurações do Sistema (todas editáveis pelo admin) ──────────────────
+  const cfg = (k: string, v: string) => db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run(k, v);
+
+  // Sistema
+  cfg("company_name", "Support Hub");
+  cfg("system_title", "SuportyHub — Suporte de TI");
+  cfg("bot_name", "Bot");
+  cfg("ticket_prefix", "");
+
+  // SLA & Alertas
+  cfg("sla_hours", "48");
+  cfg("inactivity_warn_minutes", "25");
+
+  // Bot — mensagens de fallback/comportamento
+  cfg("invalid_option_msg", "Opção inválida. Por favor, escolha uma das opções disponíveis.");
+  cfg("ask_name_msg", "Olá! Para melhor atendê-lo(a), por favor informe seu *nome completo*.");
+  cfg("ask_name_retry_msg", "Por favor, informe um nome válido para prosseguir.");
+  cfg("ask_description_retry_msg", "Por favor, descreva o problema para prosseguir.");
+  cfg("returning_client_msg", "Olá, *{nome}*! 👋\n\nIdentifiquei seu cadastro:\n📍 *Filial:* {filial}\n🏢 *Departamento:* {departamento}\n\nSelecione a *categoria* do chamado:\n\n{lista_categorias}");
+  cfg("analyst_greeting_template", "Olá, {saudacao}!\n\nSou {nome}, analista responsável pelo seu chamado.\n\nA partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação.");
+
+  // Horário comercial
+  cfg("business_hours_enabled", "false");
+  cfg("business_hours_start", "08:00");
+  cfg("business_hours_end", "18:00");
+  cfg("business_days", "1,2,3,4,5");
+  cfg("outside_hours_msg", "Nosso horário de atendimento é de {inicio} às {fim}, de segunda a sexta. Retornaremos em breve!");
+
   // Seed de dados de referência
   const row = db.prepare("SELECT value FROM settings WHERE key = 'seed_version'").get() as { value: string } | undefined;
   const currentVersion = row ? parseInt(row.value) : 0;
@@ -241,6 +269,12 @@ export function nextTicketNumber(): string {
 export function getInactivityMinutes(): number {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'inactivity_minutes'").get() as { value: string } | undefined;
   return row ? parseInt(row.value) : 30;
+}
+
+/** Retorna qualquer configuração do sistema pelo chave */
+export function getSetting(key: string, defaultValue = ""): string {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value ?? defaultValue;
 }
 
 /** Salva uma mensagem pré-ticket (antes da criação do chamado) */

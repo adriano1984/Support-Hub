@@ -167,4 +167,60 @@ router.delete("/settings/messages/:id", (req, res) => {
   res.json({ success: true, message: "Mensagem removida" });
 });
 
+// ─── System Config (key-value) ─────────────────────────────────────────────────
+const SYSTEM_CONFIG_KEYS = [
+  "company_name","system_title","bot_name","ticket_prefix",
+  "sla_hours","inactivity_minutes","inactivity_warn_minutes",
+  "invalid_option_msg","ask_name_msg","ask_name_retry_msg",
+  "ask_description_retry_msg","returning_client_msg","analyst_greeting_template",
+  "business_hours_enabled","business_hours_start","business_hours_end",
+  "business_days","outside_hours_msg",
+];
+
+router.get("/settings/system-config", (_req, res) => {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key != 'ticket_counter' AND key != 'seed_version'").all() as Array<{ key: string; value: string }>;
+  const result: Record<string, string> = {};
+  rows.forEach(r => { result[r.key] = r.value; });
+  res.json(result);
+});
+
+router.put("/settings/system-config/:key", (req, res): void => {
+  const { key } = req.params;
+  const { value } = req.body;
+  const actor = parseAuthHeader(req.headers.authorization);
+  const ip = req.ip ?? req.socket.remoteAddress ?? null;
+
+  if (!SYSTEM_CONFIG_KEYS.includes(key)) {
+    res.status(400).json({ error: "Chave de configuração inválida" }); return;
+  }
+  if (value === undefined || value === null) {
+    res.status(400).json({ error: "Valor é obrigatório" }); return;
+  }
+
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, String(value));
+  addAuditLog({ userId: actor?.userId, userName: actor?.name, action: "system_config_updated", entity: "settings", detail: `Config "${key}" atualizada`, ip });
+  res.json({ key, value: String(value) });
+});
+
+router.post("/settings/system-config/batch", (req, res): void => {
+  const { updates } = req.body as { updates: Record<string, string> };
+  const actor = parseAuthHeader(req.headers.authorization);
+  const ip = req.ip ?? req.socket.remoteAddress ?? null;
+
+  if (!updates || typeof updates !== "object") {
+    res.status(400).json({ error: "updates deve ser um objeto" }); return;
+  }
+
+  const invalid = Object.keys(updates).filter(k => !SYSTEM_CONFIG_KEYS.includes(k));
+  if (invalid.length > 0) {
+    res.status(400).json({ error: `Chaves inválidas: ${invalid.join(", ")}` }); return;
+  }
+
+  for (const [key, value] of Object.entries(updates)) {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, String(value));
+  }
+  addAuditLog({ userId: actor?.userId, userName: actor?.name, action: "system_config_batch_updated", entity: "settings", detail: `${Object.keys(updates).length} configurações atualizadas`, ip });
+  res.json({ success: true, updated: Object.keys(updates).length });
+});
+
 export default router;

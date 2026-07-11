@@ -34,6 +34,7 @@ import CannedResponses from "@/pages/Settings/CannedResponses";
 import Roles from "@/pages/Settings/Roles";
 import Audit from "@/pages/Settings/Audit";
 import SupplierConversations from "@/pages/SupplierConversations";
+import SystemConfig from "@/pages/Settings/SystemConfig";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -182,6 +183,7 @@ function AppRouter() {
             <Route path="/settings/canned-responses" component={CannedResponses} />
             <Route path="/settings/roles" component={Roles} />
             <Route path="/settings/audit" component={Audit} />
+            <Route path="/settings/sistema" component={SystemConfig} />
             {(user.role === "admin" || user.role === "manager") && (
               <Route path="/supplier-conversations" component={SupplierConversations} />
             )}

@@ -11,7 +11,7 @@ import { Boom } from "@hapi/boom";
 import path from "path";
 import fs from "fs";
 import qrcode from "qrcode";
-import { db, nextTicketNumber, getInactivityMinutes, savePreTicketMessage, getOrCreateSupplierConversation, saveSupplierMessage } from "./database";
+import { db, nextTicketNumber, getInactivityMinutes, getSetting, savePreTicketMessage, getOrCreateSupplierConversation, saveSupplierMessage } from "./database";
 import { logger } from "./logger";
 import { processarCliente } from "../overlay";
 import { broadcastEvent } from "./sse";
@@ -714,7 +714,7 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
     if (!nome) {
       conv.step = "ask_name";
       conv.askNameBeforeMenu = true;
-      const askMsg = getAutoMessage("ask_name") || "Olá! Para melhor atendê-lo(a), por favor informe seu *nome completo*.";
+      const askMsg = getAutoMessage("ask_name") || getSetting("ask_name_msg", "Olá! Para melhor atendê-lo(a), por favor informe seu *nome completo*.");
       await sendMessage(phone, askMsg);
       savePreTicketMessage(phone, "outbound", "text", askMsg, "Bot");
       startPreTicketInactivity(phone);
@@ -746,7 +746,7 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
       const hasName = !!(conv.clientName || conv.pushName);
       if (!hasName) {
         conv.step = "ask_name";
-        const askNameMsg = getAutoMessage("ask_name") || "Olá! Não consegui identificar seu nome. Por favor, informe seu nome completo para prosseguirmos.";
+        const askNameMsg = getAutoMessage("ask_name") || getSetting("ask_name_msg", "Olá! Para melhor atendê-lo(a), por favor informe seu *nome completo*.");
         await sendMessage(phone, askNameMsg);
         savePreTicketMessage(phone, "outbound", "text", askNameMsg, "Bot");
         startPreTicketInactivity(phone);
@@ -768,7 +768,9 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
           const categories = db.prepare("SELECT id, name FROM categories WHERE active = 1 ORDER BY id").all() as Array<{ id: number; name: string }>;
           const catList = buildNumberedList(categories);
 
-          const skipMsg = `Olá, *${nome}*! 👋\n\nIdentifiquei seu cadastro:\n📍 *Filial:* ${branchRow?.name ?? "—"}\n🏢 *Departamento:* ${deptRow?.name ?? "—"}\n\nSelecione a *categoria* do chamado:\n\n${catList}`;
+          const skipMsg = getSetting("returning_client_msg",
+            "Olá, *{nome}*! 👋\n\nIdentifiquei seu cadastro:\n📍 *Filial:* {filial}\n🏢 *Departamento:* {departamento}\n\nSelecione a *categoria* do chamado:\n\n{lista_categorias}"
+          ).replace("{nome}", nome ?? "").replace("{filial}", branchRow?.name ?? "—").replace("{departamento}", deptRow?.name ?? "—").replace("{lista_categorias}", catList);
           await sendMessage(phone, skipMsg);
           savePreTicketMessage(phone, "outbound", "text", skipMsg, "Bot");
           startPreTicketInactivity(phone);
@@ -922,7 +924,7 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
     savePreTicketMessage(phone, "inbound", msgType, msgContent, nome || "Cliente");
     const descContent = msgContent.trim() || text.trim();
     if (!descContent) {
-      const retry = "Por favor, descreva o problema para prosseguir.";
+      const retry = getSetting("ask_description_retry_msg", "Por favor, descreva o problema para prosseguir.");
       await sendMessage(phone, retry);
       savePreTicketMessage(phone, "outbound", "text", retry, "Bot");
       startPreTicketInactivity(phone);
@@ -1005,10 +1007,9 @@ export async function notifyStatusChange(
   // ── TRANSIÇÃO PARA EM ATENDIMENTO: apresentação do atendente ───────────────
   if (newStatus === "in_progress" && previousStatus !== "in_progress") {
     const nome = attendantName || "Atendente";
-    const msg =
-      `Olá, ${getGreeting()}!\n\n` +
-      `Sou ${nome}, analista responsável pelo seu chamado.\n\n` +
-      `A partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação.`;
+    const msg = getSetting("analyst_greeting_template",
+      "Olá, {saudacao}!\n\nSou {nome}, analista responsável pelo seu chamado.\n\nA partir deste momento acompanharei seu atendimento e darei continuidade à tratativa da sua solicitação."
+    ).replace("{saudacao}", getGreeting()).replace("{nome}", nome);
     await sendMessage(ticket.whatsapp_phone, msg);
     return;
   }
