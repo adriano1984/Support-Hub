@@ -187,6 +187,129 @@ router.get("/dashboard/alerts", (_req, res) => {
   });
 });
 
+// ─── Monthly breakdown for AGM presentation ──────────────────────────────────
+router.get("/dashboard/monthly", (req, res) => {
+  const { branchId, departmentId, categoryId } = req.query;
+
+  let extraFilter = "";
+  if (branchId) extraFilter += ` AND t.branch_id = ${parseInt(branchId as string)}`;
+  if (departmentId) extraFilter += ` AND t.department_id = ${parseInt(departmentId as string)}`;
+  if (categoryId) extraFilter += ` AND t.category_id = ${parseInt(categoryId as string)}`;
+
+  // Month-by-month totals (last 24 months)
+  const monthly = db.prepare(`
+    SELECT
+      strftime('%Y-%m', t.created_at) as month,
+      COUNT(*) as total_opened,
+      SUM(CASE WHEN t.status = 'closed' THEN 1 ELSE 0 END) as total_closed,
+      SUM(CASE WHEN t.status IN ('open','in_progress') THEN 1 ELSE 0 END) as total_active,
+      SUM(CASE WHEN t.reopen_count > 0 THEN 1 ELSE 0 END) as total_reopened,
+      ROUND(AVG(CASE WHEN t.status = 'closed'
+        THEN (julianday(t.updated_at) - julianday(t.created_at)) * 24
+        ELSE NULL END), 1) as avg_resolution_hours,
+      ROUND(AVG(CASE WHEN t.first_response_at IS NOT NULL
+        THEN (julianday(t.first_response_at) - julianday(t.created_at)) * 60
+        ELSE NULL END), 0) as avg_first_response_min,
+      SUM(CASE WHEN t.status IN ('open','in_progress')
+        AND (julianday('now') - julianday(t.created_at)) * 24 > 48 THEN 1 ELSE 0 END) as sla_breached,
+      COUNT(*) - SUM(CASE WHEN t.status IN ('open','in_progress')
+        AND (julianday('now') - julianday(t.created_at)) * 24 > 48 THEN 1 ELSE 0 END) as sla_met,
+      ROUND(CAST(COUNT(*) - SUM(CASE WHEN t.status IN ('open','in_progress')
+        AND (julianday('now') - julianday(t.created_at)) * 24 > 48 THEN 1 ELSE 0 END) AS REAL) * 100 / COUNT(*), 1) as sla_percent
+    FROM tickets t
+    WHERE t.created_at >= datetime('now', '-24 months') ${extraFilter}
+    GROUP BY month
+    ORDER BY month ASC
+  `).all() as Array<{
+    month: string;
+    total_opened: number;
+    total_closed: number;
+    total_active: number;
+    total_reopened: number;
+    avg_resolution_hours: number | null;
+    avg_first_response_min: number | null;
+    sla_breached: number;
+    sla_met: number;
+    sla_percent: number;
+  }>;
+
+  // Monthly by branch (last 12 months)
+  const monthlyByBranch = db.prepare(`
+    SELECT
+      strftime('%Y-%m', t.created_at) as month,
+      COALESCE(b.name, 'Sem Filial') as branch,
+      COUNT(*) as count
+    FROM tickets t
+    LEFT JOIN branches b ON t.branch_id = b.id
+    WHERE t.created_at >= datetime('now', '-12 months') ${extraFilter}
+    GROUP BY month, b.id
+    ORDER BY month ASC, count DESC
+  `).all() as Array<{ month: string; branch: string; count: number }>;
+
+  // Monthly by category (last 12 months)
+  const monthlyByCategory = db.prepare(`
+    SELECT
+      strftime('%Y-%m', t.created_at) as month,
+      COALESCE(c.name, 'Sem Categoria') as category,
+      COUNT(*) as count
+    FROM tickets t
+    LEFT JOIN categories c ON t.category_id = c.id
+    WHERE t.created_at >= datetime('now', '-12 months') ${extraFilter}
+    GROUP BY month, c.id
+    ORDER BY month ASC, count DESC
+  `).all() as Array<{ month: string; category: string; count: number }>;
+
+  // Monthly by analyst (last 12 months)
+  const monthlyByAnalyst = db.prepare(`
+    SELECT
+      strftime('%Y-%m', t.created_at) as month,
+      COALESCE(t.assignee_name, 'Não atribuído') as analyst,
+      COUNT(*) as count,
+      SUM(CASE WHEN t.status = 'closed' THEN 1 ELSE 0 END) as closed
+    FROM tickets t
+    WHERE t.created_at >= datetime('now', '-12 months') ${extraFilter}
+    GROUP BY month, t.assignee_name
+    ORDER BY month ASC, count DESC
+  `).all() as Array<{ month: string; analyst: string; count: number; closed: number }>;
+
+  // Top categories all time
+  const topCategories = db.prepare(`
+    SELECT COALESCE(c.name,'Sem Categoria') as label, COUNT(*) as count
+    FROM tickets t LEFT JOIN categories c ON t.category_id = c.id
+    WHERE 1=1 ${extraFilter}
+    GROUP BY c.id ORDER BY count DESC LIMIT 5
+  `).all() as Array<{ label: string; count: number }>;
+
+  // Top branches all time
+  const topBranches = db.prepare(`
+    SELECT COALESCE(b.name,'Sem Filial') as label, COUNT(*) as count
+    FROM tickets t LEFT JOIN branches b ON t.branch_id = b.id
+    WHERE 1=1 ${extraFilter}
+    GROUP BY b.id ORDER BY count DESC LIMIT 5
+  `).all() as Array<{ label: string; count: number }>;
+
+  // Year-over-year: current vs previous year
+  const currentYear = new Date().getFullYear();
+  const yoyCurrent = (db.prepare(
+    `SELECT COUNT(*) as c FROM tickets t WHERE strftime('%Y', t.created_at) = ? ${extraFilter}`
+  ).get(String(currentYear)) as { c: number }).c;
+  const yoyPrev = (db.prepare(
+    `SELECT COUNT(*) as c FROM tickets t WHERE strftime('%Y', t.created_at) = ? ${extraFilter}`
+  ).get(String(currentYear - 1)) as { c: number }).c;
+
+  res.json({
+    monthly,
+    monthlyByBranch,
+    monthlyByCategory,
+    monthlyByAnalyst,
+    topCategories,
+    topBranches,
+    yoyCurrent,
+    yoyPrev,
+    currentYear,
+  });
+});
+
 router.get("/dashboard/recent", (_req, res) => {
   const activity = db.prepare(
     `SELECT al.id, al.ticket_id, al.action, al.detail, al.created_at,

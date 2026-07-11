@@ -79,6 +79,13 @@ export const API = {
   getDashboardRecent: () => apiFetch<RecentActivity[]>("/api/dashboard/recent"),
   recent: () => apiFetch("/api/dashboard/recent"),
   exportTickets: () => apiFetch<any[]>("/api/dashboard/export"),
+  monthlyStats: (params?: { branchId?: number; departmentId?: number; categoryId?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.branchId) qs.set("branchId", String(params.branchId));
+    if (params?.departmentId) qs.set("departmentId", String(params.departmentId));
+    if (params?.categoryId) qs.set("categoryId", String(params.categoryId));
+    return apiFetch<MonthlyStats>(`/api/dashboard/monthly${qs.toString() ? "?" + qs : ""}`);
+  },
 
   // Canned Responses
   listCannedResponses: (params?: { category?: string; q?: string }) => {
@@ -181,6 +188,31 @@ export interface DashboardStats {
   assigneeAvgResponse: Array<{ label: string; avgMinutes: number }>;
   last30days: Array<{ day: string; count: number }>;
   openByBranch: Array<{ label: string; count: number }>;
+}
+
+export interface MonthlyRow {
+  month: string;
+  total_opened: number;
+  total_closed: number;
+  total_active: number;
+  total_reopened: number;
+  avg_resolution_hours: number | null;
+  avg_first_response_min: number | null;
+  sla_breached: number;
+  sla_met: number;
+  sla_percent: number;
+}
+
+export interface MonthlyStats {
+  monthly: MonthlyRow[];
+  monthlyByBranch: Array<{ month: string; branch: string; count: number }>;
+  monthlyByCategory: Array<{ month: string; category: string; count: number }>;
+  monthlyByAnalyst: Array<{ month: string; analyst: string; count: number; closed: number }>;
+  topCategories: Array<{ label: string; count: number }>;
+  topBranches: Array<{ label: string; count: number }>;
+  yoyCurrent: number;
+  yoyPrev: number;
+  currentYear: number;
 }
 
 export interface RecentActivity {

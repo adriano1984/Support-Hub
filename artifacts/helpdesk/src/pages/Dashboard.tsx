@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { API, type DashboardStats } from "@/lib/api";
+import { API, type DashboardStats, type MonthlyStats } from "@/lib/api";
 import { apiFetch } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, LineChart, Line, RadialBarChart, RadialBar, Legend,
-  AreaChart, Area,
+  AreaChart, Area, ComposedChart,
 } from "recharts";
 import {
   Ticket, Clock, CheckCircle, XCircle, TrendingUp, Users, AlertTriangle,
   Download, FileSpreadsheet, Presentation, Loader2, RefreshCw, Target,
-  ArrowUpRight, ArrowDownRight, Minus, Award, Zap, BarChart2,
+  ArrowUpRight, ArrowDownRight, Minus, Award, Zap, BarChart2, CalendarDays,
+  TrendingDown, Building2, Tag, UserCheck,
 } from "lucide-react";
 
 const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#14b8a6","#f97316","#84cc16"];
@@ -142,6 +143,220 @@ async function exportPptx(stats: DashboardStats) {
       { x:0.5, y:1.1, w:9, h:5.3, chartColors:["6366f1"], showLegend:false } as any);
   }
   await pptx.writeFile({ fileName: `helpdesk-${new Date().toISOString().slice(0,10)}.pptx` });
+}
+
+// ─── Month label helper ───────────────────────────────────────────────────────
+const MONTH_NAMES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+function fmtMonth(m: string) {
+  const [year, mon] = m.split("-");
+  return MONTH_NAMES[parseInt(mon) - 1] + "/" + year.slice(2);
+}
+function fmtMonthFull(m: string) {
+  const [year, mon] = m.split("-");
+  const names = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  return names[parseInt(mon) - 1] + " de " + year;
+}
+
+// ─── Monthly PDF export (AGM) ─────────────────────────────────────────────────
+function exportMonthlyPdf(monthly: MonthlyStats) {
+  const rows = monthly.monthly.map(r => `
+    <tr>
+      <td>${fmtMonthFull(r.month)}</td>
+      <td class="num">${r.total_opened}</td>
+      <td class="num">${r.total_closed}</td>
+      <td class="num">${r.total_active}</td>
+      <td class="num sla ${r.sla_percent >= 90 ? "ok" : "nok"}">${r.sla_percent}%</td>
+      <td class="num">${r.avg_resolution_hours != null ? r.avg_resolution_hours.toFixed(1)+"h" : "—"}</td>
+      <td class="num">${r.avg_first_response_min != null ? r.avg_first_response_min+"min" : "—"}</td>
+      <td class="num">${r.sla_breached}</td>
+      <td class="num">${r.total_reopened}</td>
+    </tr>`).join("");
+
+  const yoyDiff = monthly.yoyCurrent - monthly.yoyPrev;
+  const yoyPct = monthly.yoyPrev > 0 ? ((yoyDiff / monthly.yoyPrev) * 100).toFixed(1) : "—";
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Relatório AGM — Mês a Mês</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;color:#1e1b4b;padding:24px;font-size:12px}
+h1{font-size:24px;margin-bottom:4px;color:#1e1b4b}
+h2{font-size:13px;color:#6366f1;margin:20px 0 8px;border-bottom:2px solid #e0e7ff;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+.subtitle{color:#64748b;font-size:11px;margin-bottom:20px}
+.yoy{display:flex;gap:16px;margin-bottom:20px}
+.yoy-card{background:#f0f0ff;border:1px solid #e0e7ff;border-radius:8px;padding:14px 20px;text-align:center;flex:1}
+.yoy-val{font-size:28px;font-weight:700;color:#6366f1}
+.yoy-lbl{font-size:10px;color:#64748b;margin-top:2px}
+.yoy-diff{font-size:12px;font-weight:600;margin-top:4px}
+.green{color:#16a34a}.red{color:#dc2626}
+table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+th{background:#6366f1;color:#fff;padding:7px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+td{padding:6px 8px;border-bottom:1px solid #e5e7eb}
+td.num{text-align:right;font-family:monospace}
+tr:nth-child(even) td{background:#f8f8ff}
+td.sla.ok{color:#16a34a;font-weight:700}
+td.sla.nok{color:#dc2626;font-weight:700}
+.badge{display:inline-block;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600}
+.badge-green{background:#dcfce7;color:#166534}
+.badge-red{background:#fee2e2;color:#991b1b}
+@media print{.no-print{display:none}@page{margin:1cm;size:A4 landscape}}
+</style></head><body>
+<div class="no-print" style="margin-bottom:14px">
+<button onclick="window.print()" style="background:#6366f1;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
+</div>
+<h1>📊 Support Hub — Relatório AGM · Mês a Mês</h1>
+<p class="subtitle">Gerado em ${new Date().toLocaleString("pt-BR")} · Últimos 24 meses</p>
+
+<h2>Comparativo Ano a Ano</h2>
+<div class="yoy">
+  <div class="yoy-card">
+    <div class="yoy-val">${monthly.yoyPrev}</div>
+    <div class="yoy-lbl">Chamados ${monthly.currentYear - 1}</div>
+  </div>
+  <div class="yoy-card">
+    <div class="yoy-val">${monthly.yoyCurrent}</div>
+    <div class="yoy-lbl">Chamados ${monthly.currentYear}</div>
+  </div>
+  <div class="yoy-card">
+    <div class="yoy-val ${yoyDiff >= 0 ? "red" : "green"}">${yoyDiff >= 0 ? "+" : ""}${yoyDiff}</div>
+    <div class="yoy-lbl">Variação absoluta</div>
+    <div class="yoy-diff ${yoyDiff >= 0 ? "red" : "green"}">${yoyDiff >= 0 ? "+" : ""}${yoyPct}%</div>
+  </div>
+</div>
+
+<h2>Detalhamento Mensal</h2>
+<table>
+<thead><tr>
+  <th>Mês</th><th>Abertos</th><th>Fechados</th><th>Ativos</th>
+  <th>SLA %</th><th>TM Resolução</th><th>1ª Resposta</th><th>SLA Venc.</th><th>Reabertos</th>
+</tr></thead>
+<tbody>${rows}</tbody>
+</table>
+
+${monthly.topBranches.length ? `<h2>Top Filiais</h2>
+<table><thead><tr><th>Filial</th><th>Total</th></tr></thead><tbody>
+${monthly.topBranches.map(b => `<tr><td>${b.label}</td><td class="num">${b.count}</td></tr>`).join("")}
+</tbody></table>` : ""}
+
+${monthly.topCategories.length ? `<h2>Top Categorias</h2>
+<table><thead><tr><th>Categoria</th><th>Total</th></tr></thead><tbody>
+${monthly.topCategories.map(c => `<tr><td>${c.label}</td><td class="num">${c.count}</td></tr>`).join("")}
+</tbody></table>` : ""}
+</body></html>`;
+
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+// ─── Monthly PPTX export (AGM) ────────────────────────────────────────────────
+async function exportMonthlyPptx(monthly: MonthlyStats) {
+  const PptxGenJS = (await import("pptxgenjs")).default;
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_16x9";
+  const today = new Date().toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" });
+
+  // Cover
+  let sl = pptx.addSlide();
+  sl.background = { color: "1e1b4b" };
+  sl.addText("📊 Support Hub", { x:0.8, y:1.5, w:8.4, h:1, fontSize:44, bold:true, color:"FFFFFF" });
+  sl.addText("Relatório Executivo — Análise Mês a Mês", { x:0.8, y:2.7, w:8.4, h:0.6, fontSize:20, color:"a5b4fc" });
+  sl.addText(`AGM ${new Date().getFullYear()} · ${today}`, { x:0.8, y:3.5, w:8.4, h:0.4, fontSize:13, color:"64748b" });
+
+  // YoY slide
+  sl = pptx.addSlide();
+  sl.addText("Comparativo Ano a Ano", { x:0.5, y:0.3, w:9, h:0.6, fontSize:24, bold:true, color:"1e1b4b" });
+  const yoyDiff = monthly.yoyCurrent - monthly.yoyPrev;
+  const yoyPct = monthly.yoyPrev > 0 ? ((yoyDiff / monthly.yoyPrev) * 100).toFixed(1) : "0";
+  const cards = [
+    { label: String(monthly.currentYear - 1), val: String(monthly.yoyPrev), color: "475569" },
+    { label: String(monthly.currentYear), val: String(monthly.yoyCurrent), color: "6366f1" },
+    { label: "Variação", val: `${yoyDiff >= 0 ? "+" : ""}${yoyDiff} (${yoyPct}%)`, color: yoyDiff > 0 ? "ef4444" : "22c55e" },
+  ];
+  cards.forEach((c, i) => {
+    const x = 0.8 + i * 2.8;
+    sl.addShape((pptx.ShapeType as any).roundRect, { x, y:1.3, w:2.4, h:2.0, fill:{ color:c.color } });
+    sl.addText(c.val, { x, y:1.5, w:2.4, h:1.0, fontSize:28, bold:true, color:"FFFFFF", align:"center" });
+    sl.addText(c.label, { x, y:2.6, w:2.4, h:0.5, fontSize:12, color:"FFFFFF", align:"center" });
+  });
+
+  // Monthly overview bar chart
+  if (monthly.monthly.length > 0) {
+    sl = pptx.addSlide();
+    sl.addText("Volume de Chamados — Mês a Mês", { x:0.5, y:0.3, w:9, h:0.6, fontSize:22, bold:true, color:"1e1b4b" });
+    const labels = monthly.monthly.map(r => fmtMonth(r.month));
+    sl.addChart((pptx.ChartType as any).bar,
+      [
+        { name:"Abertos", labels, values: monthly.monthly.map(r => r.total_opened) },
+        { name:"Fechados", labels, values: monthly.monthly.map(r => r.total_closed) },
+      ],
+      { x:0.5, y:1.1, w:9, h:5.2, barGrouping:"clustered", chartColors:["6366f1","22c55e"], showLegend:true } as any);
+  }
+
+  // SLA trend slide
+  if (monthly.monthly.length > 0) {
+    sl = pptx.addSlide();
+    sl.addText("SLA % — Evolução Mensal", { x:0.5, y:0.3, w:9, h:0.6, fontSize:22, bold:true, color:"1e1b4b" });
+    sl.addText("Meta: 90%", { x:0.5, y:0.85, w:9, h:0.35, fontSize:12, color:"64748b" });
+    const labels = monthly.monthly.map(r => fmtMonth(r.month));
+    sl.addChart((pptx.ChartType as any).line,
+      [{ name:"SLA %", labels, values: monthly.monthly.map(r => r.sla_percent) }],
+      { x:0.5, y:1.2, w:9, h:5.1, chartColors:["22c55e"], showLegend:false, dataLabelFormatCode:"0\"%\"" } as any);
+  }
+
+  // Avg resolution slide
+  if (monthly.monthly.some(r => r.avg_resolution_hours != null)) {
+    sl = pptx.addSlide();
+    sl.addText("Tempo Médio de Resolução (horas) — Mês a Mês", { x:0.5, y:0.3, w:9, h:0.6, fontSize:20, bold:true, color:"1e1b4b" });
+    const labels = monthly.monthly.map(r => fmtMonth(r.month));
+    sl.addChart((pptx.ChartType as any).line,
+      [{ name:"TMR (horas)", labels, values: monthly.monthly.map(r => r.avg_resolution_hours ?? 0) }],
+      { x:0.5, y:1.1, w:9, h:5.2, chartColors:["f59e0b"], showLegend:false } as any);
+  }
+
+  // By branch slide
+  if (monthly.topBranches.length > 0) {
+    sl = pptx.addSlide();
+    sl.addText("Total por Filial (acumulado)", { x:0.5, y:0.3, w:9, h:0.6, fontSize:22, bold:true, color:"1e1b4b" });
+    sl.addChart((pptx.ChartType as any).bar,
+      [{ name:"Chamados", labels: monthly.topBranches.map(b => b.label), values: monthly.topBranches.map(b => b.count) }],
+      { x:0.5, y:1.1, w:9, h:5.2, chartColors:["6366f1"], showLegend:false } as any);
+  }
+
+  // By category slide
+  if (monthly.topCategories.length > 0) {
+    sl = pptx.addSlide();
+    sl.addText("Top Categorias (acumulado)", { x:0.5, y:0.3, w:9, h:0.6, fontSize:22, bold:true, color:"1e1b4b" });
+    sl.addChart((pptx.ChartType as any).bar,
+      [{ name:"Chamados", labels: monthly.topCategories.map(c => c.label), values: monthly.topCategories.map(c => c.count) }],
+      { x:0.5, y:1.1, w:9, h:5.2, chartColors:["8b5cf6"], showLegend:false } as any);
+  }
+
+  // Monthly detail table slide (text-based)
+  sl = pptx.addSlide();
+  sl.addText("Tabela Mensal Detalhada", { x:0.5, y:0.3, w:9, h:0.5, fontSize:18, bold:true, color:"1e1b4b" });
+  const tableRows: any[] = [
+    [
+      { text:"Mês", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9 } },
+      { text:"Abertos", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9, align:"right" } },
+      { text:"Fechados", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9, align:"right" } },
+      { text:"Ativos", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9, align:"right" } },
+      { text:"SLA %", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9, align:"right" } },
+      { text:"TMR", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9, align:"right" } },
+      { text:"SLA Venc.", options:{ bold:true, fill:"6366f1", color:"FFFFFF", fontSize:9, align:"right" } },
+    ],
+    ...monthly.monthly.slice(-18).map((r, i) => [
+      { text:fmtMonthFull(r.month), options:{ fontSize:8, fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+      { text:String(r.total_opened), options:{ fontSize:8, align:"right", fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+      { text:String(r.total_closed), options:{ fontSize:8, align:"right", fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+      { text:String(r.total_active), options:{ fontSize:8, align:"right", fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+      { text:`${r.sla_percent}%`, options:{ fontSize:8, align:"right", bold:true, color: r.sla_percent >= 90 ? "16a34a" : "dc2626", fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+      { text:r.avg_resolution_hours != null ? `${r.avg_resolution_hours.toFixed(1)}h` : "—", options:{ fontSize:8, align:"right", fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+      { text:String(r.sla_breached), options:{ fontSize:8, align:"right", fill: i%2===0 ? "f8f8ff" : "FFFFFF" } },
+    ]),
+  ];
+  sl.addTable(tableRows, { x:0.3, y:0.9, w:9.4, h:5.5, colW:[2.4,0.85,0.85,0.75,0.75,0.85,0.9], border:{ pt:0.5, color:"e5e7eb" } });
+
+  await pptx.writeFile({ fileName: `helpdesk-agm-${new Date().getFullYear()}-mensal.pptx` });
 }
 
 // ─── KPI Card Component ───────────────────────────────────────────────────────
@@ -333,13 +548,25 @@ function AnalystRanking({ data }: { data: Array<{ label: string; totalTickets: n
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats & { slaPercent?: number; slaBreached?: number; slaMet?: number; closedToday?: number; byStatus?: any[]; analystRanking?: any[]; heatmap?: any[]; last7days?: any[] } | null>(null);
+  const [monthlyData, setMonthlyData] = useState<MonthlyStats | null>(null);
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState<"csv"|"pdf"|"pptx"|null>(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const [exporting, setExporting] = useState<"csv"|"pdf"|"pptx"|"monthly-pdf"|"monthly-pptx"|null>(null);
   const [period, setPeriod] = useState("all");
   const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [filterBranch, setFilterBranch] = useState("all");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const loadMonthly = useCallback(async () => {
+    setMonthlyLoading(true);
+    try {
+      const params: Record<string, number> = {};
+      if (filterBranch !== "all") params.branchId = parseInt(filterBranch);
+      const m = await API.monthlyStats(params);
+      setMonthlyData(m);
+    } catch { /**/ } finally { setMonthlyLoading(false); }
+  }, [filterBranch]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -359,20 +586,23 @@ export default function Dashboard() {
   }, [period, filterBranch]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadMonthly(); }, [loadMonthly]);
 
   // Auto-refresh every 60s
   useEffect(() => {
-    const t = setInterval(load, 60000);
+    const t = setInterval(() => { load(); loadMonthly(); }, 60000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, loadMonthly]);
 
-  const handleExport = async (type: "csv"|"pdf"|"pptx") => {
+  const handleExport = async (type: "csv"|"pdf"|"pptx"|"monthly-pdf"|"monthly-pptx") => {
     if (!stats) return;
     setExporting(type);
     try {
       if (type === "csv") exportCsv(tickets);
       else if (type === "pdf") exportPdf(stats, tickets);
-      else await exportPptx(stats);
+      else if (type === "pptx") await exportPptx(stats);
+      else if (type === "monthly-pdf" && monthlyData) exportMonthlyPdf(monthlyData);
+      else if (type === "monthly-pptx" && monthlyData) await exportMonthlyPptx(monthlyData);
     } catch (e) { console.error(e); }
     finally { setExporting(null); }
   };
@@ -529,8 +759,11 @@ export default function Dashboard() {
       )}
 
       {/* Tabs de análise */}
-      <Tabs defaultValue="filiais">
+      <Tabs defaultValue="mensal">
         <TabsList className="flex-wrap h-auto gap-1 bg-muted/50">
+          <TabsTrigger value="mensal" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white font-semibold">
+            <CalendarDays className="h-3.5 w-3.5 mr-1" />Mês a Mês
+          </TabsTrigger>
           <TabsTrigger value="filiais">Filiais</TabsTrigger>
           <TabsTrigger value="categorias">Categorias</TabsTrigger>
           <TabsTrigger value="departamentos">Departamentos</TabsTrigger>
@@ -539,6 +772,358 @@ export default function Dashboard() {
           <TabsTrigger value="equipe">Equipe</TabsTrigger>
           <TabsTrigger value="tendencia">Tendência</TabsTrigger>
         </TabsList>
+
+        {/* ── Mês a Mês (AGM) ───────────────────────────────────────────── */}
+        <TabsContent value="mensal" className="mt-4 space-y-5">
+          {monthlyLoading && !monthlyData ? (
+            <div className="flex items-center justify-center py-20 text-muted-foreground gap-2 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" /> Carregando dados mensais…
+            </div>
+          ) : !monthlyData || monthlyData.monthly.length === 0 ? (
+            <Card><CardContent className="py-16 text-center text-muted-foreground text-sm">Nenhum dado mensal disponível ainda.</CardContent></Card>
+          ) : (
+            <>
+              {/* AGM export bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-950/30 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                    <CalendarDays className="h-4 w-4" /> Painel AGM — Análise Mês a Mês
+                  </p>
+                  <p className="text-xs text-indigo-500/80 mt-0.5">Últimos 24 meses · dados consolidados para apresentação em assembleia</p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" className="h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                    onClick={() => handleExport("monthly-pdf")} disabled={!!exporting}>
+                    {exporting === "monthly-pdf" ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+                    Relatório PDF (AGM)
+                  </Button>
+                  <Button size="sm" className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white"
+                    onClick={() => handleExport("monthly-pptx")} disabled={!!exporting}>
+                    {exporting === "monthly-pptx" ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Presentation className="h-3.5 w-3.5 mr-1" />}
+                    PowerPoint (AGM)
+                  </Button>
+                </div>
+              </div>
+
+              {/* YoY Comparison */}
+              {(() => {
+                const diff = monthlyData.yoyCurrent - monthlyData.yoyPrev;
+                const pct = monthlyData.yoyPrev > 0 ? ((diff / monthlyData.yoyPrev) * 100).toFixed(1) : null;
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <Card className="bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800">
+                      <CardContent className="p-4 text-center">
+                        <div className="text-2xl font-bold text-slate-600 dark:text-slate-300">{monthlyData.yoyPrev}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Chamados {monthlyData.currentYear - 1}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800">
+                      <CardContent className="p-4 text-center">
+                        <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{monthlyData.yoyCurrent}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Chamados {monthlyData.currentYear}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className={`${diff > 0 ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900" : "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"}`}>
+                      <CardContent className="p-4 text-center">
+                        <div className={`text-2xl font-bold ${diff > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                          {diff >= 0 ? "+" : ""}{diff}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">Variação absoluta</div>
+                      </CardContent>
+                    </Card>
+                    <Card className={`${diff > 0 ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900" : "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"}`}>
+                      <CardContent className="p-4 text-center">
+                        <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${diff > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                          {diff > 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
+                          {pct != null ? `${diff >= 0 ? "+" : ""}${pct}%` : "—"}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">Variação percentual</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                );
+              })()}
+
+              {/* Main chart: abertos vs fechados grouped bar */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <BarChart2 className="h-4 w-4 text-primary" /> Volume de Chamados — Mês a Mês (últimos 24 meses)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <ComposedChart data={monthlyData.monthly.map(r => ({ name: fmtMonth(r.month), abertos: r.total_opened, fechados: r.total_closed, sla: r.sla_percent }))} margin={{ right: 16, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" width={36} />
+                      <Tooltip formatter={(v: any, n: string) => [n === "sla" ? `${v}%` : v, n === "abertos" ? "Abertos" : n === "fechados" ? "Fechados" : "SLA %"]} />
+                      <Legend formatter={(v: string) => v === "abertos" ? "Abertos" : v === "fechados" ? "Fechados" : "SLA %"} />
+                      <Bar yAxisId="left" dataKey="abertos" fill="#6366f1" radius={[3,3,0,0]} name="abertos" />
+                      <Bar yAxisId="left" dataKey="fechados" fill="#22c55e" radius={[3,3,0,0]} name="fechados" />
+                      <Line yAxisId="right" type="monotone" dataKey="sla" stroke="#f59e0b" strokeWidth={2} dot={false} name="sla" strokeDasharray="4 2" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* SLA trend + TMR trend */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Target className="h-4 w-4 text-amber-500" /> SLA % — Evolução Mensal · Meta 90%
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <ComposedChart data={monthlyData.monthly.map(r => ({ name: fmtMonth(r.month), sla: r.sla_percent, meta: 90 }))} margin={{ right: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} unit="%" width={32} />
+                        <Tooltip formatter={(v: any, n: string) => [`${v}%`, n === "sla" ? "SLA Cumprido" : "Meta"]} />
+                        <Line type="monotone" dataKey="sla" stroke="#22c55e" strokeWidth={2.5} dot={(p: any) => (
+                          <circle key={p.key} cx={p.cx} cy={p.cy} r={3} fill={p.payload.sla >= 90 ? "#22c55e" : "#ef4444"} stroke="none" />
+                        )} />
+                        <Line type="monotone" dataKey="meta" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 3" dot={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-teal-500" /> Tempo Médio de Resolução (horas)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={monthlyData.monthly.map(r => ({ name: fmtMonth(r.month), tmr: r.avg_resolution_hours }))} margin={{ right: 8 }}>
+                        <defs>
+                          <linearGradient id="tmrGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.25} />
+                            <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                        <YAxis tick={{ fontSize: 9 }} unit="h" width={32} />
+                        <Tooltip formatter={(v: any) => [v != null ? `${v}h` : "—", "TMR"]} />
+                        <Area type="monotone" dataKey="tmr" stroke="#14b8a6" strokeWidth={2} fill="url(#tmrGrad)" dot={{ r: 3, fill: "#14b8a6" }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Per-branch and per-category monthly breakdown */}
+              {monthlyData.monthlyByBranch.length > 0 && (() => {
+                const months = [...new Set(monthlyData.monthlyByBranch.map(r => r.month))].slice(-12);
+                const branchNames = [...new Set(monthlyData.monthlyByBranch.map(r => r.branch))].slice(0, 8);
+                const branchColors = ["#6366f1","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#14b8a6"];
+                const branchData = months.map(m => {
+                  const row: Record<string, any> = { name: fmtMonth(m) };
+                  branchNames.forEach(b => {
+                    const found = monthlyData.monthlyByBranch.find(r => r.month === m && r.branch === b);
+                    row[b] = found?.count ?? 0;
+                  });
+                  return row;
+                });
+                return (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-indigo-500" /> Chamados por Filial — Últimos 12 Meses
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={branchData} margin={{ right: 8, bottom: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                          <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                          <Tooltip />
+                          <Legend formatter={(v: string) => v} wrapperStyle={{ fontSize: 10 }} />
+                          {branchNames.map((b, i) => (
+                            <Bar key={b} dataKey={b} stackId="br" fill={branchColors[i % branchColors.length]} />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
+              {monthlyData.monthlyByCategory.length > 0 && (() => {
+                const months = [...new Set(monthlyData.monthlyByCategory.map(r => r.month))].slice(-12);
+                const catNames = [...new Set(monthlyData.monthlyByCategory.map(r => r.category))].slice(0, 8);
+                const catColors = ["#6366f1","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#22c55e","#ec4899","#14b8a6"];
+                const catData = months.map(m => {
+                  const row: Record<string, any> = { name: fmtMonth(m) };
+                  catNames.forEach(c => {
+                    const found = monthlyData.monthlyByCategory.find(r => r.month === m && r.category === c);
+                    row[c] = found?.count ?? 0;
+                  });
+                  return row;
+                });
+                return (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-purple-500" /> Chamados por Categoria — Últimos 12 Meses
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={catData} margin={{ right: 8, bottom: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                          <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                          <Tooltip />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          {catNames.map((c, i) => (
+                            <Bar key={c} dataKey={c} stackId="cat" fill={catColors[i % catColors.length]} />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
+              {/* Detailed table — all months */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-primary" /> Tabela Mensal Detalhada — últimos 24 meses
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="overflow-x-auto p-0">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-indigo-600 text-white">
+                        <th className="text-left px-3 py-2.5 font-semibold">Mês</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">Abertos</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">Fechados</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">Ativos</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">SLA %</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">SLA Venc.</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">TMR</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">1ª Resp.</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">Reabertos</th>
+                        <th className="text-right px-3 py-2.5 font-semibold">Taxa Res.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...monthlyData.monthly].reverse().map((r, i) => {
+                        const resolRate = r.total_opened > 0 ? Math.round((r.total_closed / r.total_opened) * 100) : 0;
+                        return (
+                          <tr key={r.month} className={i % 2 === 0 ? "bg-background" : "bg-muted/30"}>
+                            <td className="px-3 py-2 font-medium">{fmtMonthFull(r.month)}</td>
+                            <td className="px-3 py-2 text-right font-mono">{r.total_opened}</td>
+                            <td className="px-3 py-2 text-right font-mono text-green-600 dark:text-green-400 font-semibold">{r.total_closed}</td>
+                            <td className="px-3 py-2 text-right font-mono text-amber-600 dark:text-amber-400">{r.total_active}</td>
+                            <td className={`px-3 py-2 text-right font-mono font-bold ${r.sla_percent >= 90 ? "text-green-600 dark:text-green-400" : r.sla_percent >= 70 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                              {r.sla_percent}%
+                            </td>
+                            <td className={`px-3 py-2 text-right font-mono ${r.sla_breached > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>{r.sla_breached}</td>
+                            <td className="px-3 py-2 text-right font-mono text-teal-600 dark:text-teal-400">{r.avg_resolution_hours != null ? `${r.avg_resolution_hours}h` : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono">{r.avg_first_response_min != null ? `${r.avg_first_response_min}min` : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono">{r.total_reopened}</td>
+                            <td className="px-3 py-2 text-right">
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${resolRate >= 80 ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" : resolRate >= 50 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400" : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"}`}>
+                                {resolRate}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      {(() => {
+                        const tot = monthlyData.monthly.reduce((acc, r) => ({
+                          opened: acc.opened + r.total_opened,
+                          closed: acc.closed + r.total_closed,
+                          breached: acc.breached + r.sla_breached,
+                          reopened: acc.reopened + r.total_reopened,
+                        }), { opened: 0, closed: 0, breached: 0, reopened: 0 });
+                        const avgSla = monthlyData.monthly.length > 0
+                          ? Math.round(monthlyData.monthly.reduce((s, r) => s + r.sla_percent, 0) / monthlyData.monthly.length)
+                          : 0;
+                        const avgTmr = (() => {
+                          const valid = monthlyData.monthly.filter(r => r.avg_resolution_hours != null);
+                          return valid.length > 0 ? (valid.reduce((s, r) => s + (r.avg_resolution_hours ?? 0), 0) / valid.length).toFixed(1) : null;
+                        })();
+                        const resolRate = tot.opened > 0 ? Math.round((tot.closed / tot.opened) * 100) : 0;
+                        return (
+                          <tr className="border-t-2 border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/40 font-bold">
+                            <td className="px-3 py-2.5 text-xs text-indigo-700 dark:text-indigo-300">Total / Média</td>
+                            <td className="px-3 py-2.5 text-right font-mono">{tot.opened}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-green-600 dark:text-green-400">{tot.closed}</td>
+                            <td className="px-3 py-2.5 text-right font-mono">—</td>
+                            <td className={`px-3 py-2.5 text-right font-mono ${avgSla >= 90 ? "text-green-600" : "text-amber-600"}`}>{avgSla}%</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-red-600 dark:text-red-400">{tot.breached}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-teal-600 dark:text-teal-400">{avgTmr != null ? `${avgTmr}h` : "—"}</td>
+                            <td className="px-3 py-2.5 text-right font-mono">—</td>
+                            <td className="px-3 py-2.5 text-right font-mono">{tot.reopened}</td>
+                            <td className="px-3 py-2.5 text-right font-mono">{resolRate}%</td>
+                          </tr>
+                        );
+                      })()}
+                    </tfoot>
+                  </table>
+                </CardContent>
+              </Card>
+
+              {/* Monthly analyst performance table */}
+              {monthlyData.monthlyByAnalyst.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <UserCheck className="h-4 w-4 text-emerald-500" /> Desempenho por Analista — últimos 12 meses
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto p-0">
+                    {(() => {
+                      const months = [...new Set(monthlyData.monthlyByAnalyst.map(r => r.month))].sort().slice(-12);
+                      const analysts = [...new Set(monthlyData.monthlyByAnalyst.map(r => r.analyst))].slice(0, 10);
+                      return (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-emerald-600 text-white">
+                              <th className="text-left px-3 py-2.5 font-semibold sticky left-0 bg-emerald-600">Analista</th>
+                              {months.map(m => <th key={m} className="text-right px-3 py-2.5 font-semibold whitespace-nowrap">{fmtMonth(m)}</th>)}
+                              <th className="text-right px-3 py-2.5 font-semibold">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analysts.map((analyst, ai) => {
+                              const total = monthlyData.monthlyByAnalyst
+                                .filter(r => r.analyst === analyst)
+                                .reduce((s, r) => s + r.count, 0);
+                              return (
+                                <tr key={analyst} className={ai % 2 === 0 ? "bg-background" : "bg-muted/30"}>
+                                  <td className="px-3 py-2 font-medium">{analyst}</td>
+                                  {months.map(m => {
+                                    const found = monthlyData.monthlyByAnalyst.find(r => r.month === m && r.analyst === analyst);
+                                    return <td key={m} className="px-3 py-2 text-right font-mono">{found?.count ?? "—"}</td>;
+                                  })}
+                                  <td className="px-3 py-2 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">{total}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </TabsContent>
 
         {/* Filiais */}
         <TabsContent value="filiais" className="mt-4 space-y-4">
