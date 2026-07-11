@@ -101,7 +101,7 @@ router.patch("/tickets/:id/status", async (req, res): Promise<void> => {
   const user = parseAuthHeader(req.headers.authorization);
   const ip = req.ip ?? req.socket.remoteAddress ?? null;
 
-  const allowed = ["open", "in_progress", "waiting_client", "waiting_analyst", "closed"];
+  const allowed = ["open", "in_progress", "closed"];
   if (!allowed.includes(status)) { res.status(400).json({ error: "Status inválido" }); return; }
 
   const ticket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
@@ -109,9 +109,7 @@ router.patch("/tickets/:id/status", async (req, res): Promise<void> => {
 
   const previousStatus = ticket.status;
   const statusLabels: Record<string, string> = {
-    open: "Aberto", in_progress: "Em atendimento",
-    waiting_client: "Aguardando Cliente", waiting_analyst: "Aguardando Analista",
-    closed: "Fechado",
+    open: "Aberto", in_progress: "Em Atendimento", closed: "Fechado",
   };
   const actor = user?.name ?? "Admin";
 
@@ -119,11 +117,9 @@ router.patch("/tickets/:id/status", async (req, res): Promise<void> => {
   const isAdmin = user?.role === "admin" || user?.role === "manager";
   if (!isAdmin) {
     const FORWARD_ONLY: Record<string, string[]> = {
-      open:            ["open", "in_progress"],
-      in_progress:     ["in_progress", "waiting_client", "waiting_analyst", "closed"],
-      waiting_client:  ["waiting_client", "in_progress", "closed"],
-      waiting_analyst: ["waiting_analyst", "in_progress", "closed"],
-      closed:          ["closed"],
+      open:        ["open", "in_progress"],
+      in_progress: ["in_progress", "closed"],
+      closed:      ["closed"],
     };
     const allowedNext = FORWARD_ONLY[previousStatus] ?? [];
     if (!allowedNext.includes(status)) {

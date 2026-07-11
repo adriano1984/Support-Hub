@@ -1,0 +1,410 @@
+Support-Hub V2 - Melhorias Gerais
+Objetivo
+
+Transformar o Support-Hub em um sistema de atendimento híbrido (Bot + Humano), totalmente configurável pelo painel administrativo, sem necessidade de alterar código para mudar regras de funcionamento.
+
+1. Central de Configurações
+
+Criar um módulo chamado:
+
+Configurações > Automação
+
+Todas as opções devem ser armazenadas no banco de dados e aplicadas em tempo real.
+
+Nenhuma regra deverá ficar fixa no código.
+
+2. Atendimento Humano Inteligente
+Entrar automaticamente em modo humano
+
+Quando o atendente enviar qualquer mensagem manualmente pelo WhatsApp conectado (Baileys):
+
+Suporte
+↓
+
+Cliente
+
+↓
+
+Conversation Mode = HUMAN
+
+↓
+
+Bot para imediatamente
+
+Enquanto estiver em modo humano:
+
+não responder mensagens
+não enviar menus
+não abrir novos fluxos
+não criar respostas automáticas
+Retorno automático ao BOT
+
+Configuração editável.
+
+Exemplo:
+
+Retornar ao BOT após:
+
+7 minutos
+
+15 minutos
+
+30 minutos
+
+1 hora
+
+Nunca
+
+Após esse período sem mensagens:
+
+HUMAN
+
+↓
+
+Inatividade
+
+↓
+
+BOT
+Voltar ao BOT ao fechar ticket
+
+Configuração:
+
+☑ Voltar automaticamente ao BOT ao fechar ticket
+3. Botão Manual
+
+Dentro do ticket:
+
+Modo
+
+🟢 BOT
+
+🔴 HUMANO
+
+Um clique altera imediatamente.
+
+Sem reiniciar servidor.
+
+4. Modo Permanente
+
+Adicionar opção:
+
+☑ Manter cliente permanentemente em atendimento humano
+
+Até que um operador remova.
+
+5. Lista de Conversas
+
+Mostrar:
+
+BOT
+
+HUMANO
+
+Tempo restante
+
+Operador responsável
+6. Bloqueio de Bots e IA
+
+Criar um sistema inteligente para detectar:
+
+ChatGPT
+Gemini
+Claude
+Copilot
+Meta AI
+DeepSeek
+Grok
+Typebot
+Evolution API
+Z-API
+WPPConnect
+n8n
+Make
+Zapier
+Webhooks
+Bots de atendimento
+URA
+Mensagens automáticas
+Fora do expediente
+Auto Reply
+
+Quando detectar:
+
+Ignorar completamente
+
+Não responder.
+
+Não abrir ticket.
+
+Não iniciar fluxo.
+
+Lista editável
+
+Permitir adicionar padrões.
+
+Exemplo:
+
+Adicionar expressão
+
+Adicionar palavra
+
+Adicionar regex
+
+Adicionar remetente
+
+Adicionar domínio
+
+Tudo pelo painel.
+
+7. Histórico Inteligente
+
+Quando o cliente retornar:
+
+Localizar automaticamente:
+
+Nome
+Filial
+Departamento
+Última categoria
+
+Se existir histórico:
+
+Mostrar:
+
+Localizei seu último atendimento.
+
+Os dados foram restaurados.
+
+Ir direto para:
+
+Categorias
+
+Sem perguntar novamente:
+
+Nome
+Filial
+Departamento
+Configuração
+☑ Restaurar nome
+
+☑ Restaurar filial
+
+☑ Restaurar departamento
+
+☑ Restaurar categoria
+
+☑ Restaurar responsável
+8. Fluxo Configurável
+
+Escolher:
+
+Sempre iniciar do zero
+
+ou
+
+Continuar último fluxo
+
+ou
+
+Restaurar apenas filial
+
+ou
+
+Restaurar tudo
+9. Mensagens Editáveis
+
+Todas as mensagens devem ser editáveis pelo painel.
+
+Inclusive:
+
+Boas-vindas
+Menu
+Filial
+Departamento
+Categoria
+Ticket aberto
+Ticket encerrado
+Atendimento humano
+
+Sem alterar código.
+
+10. Timer Configurável
+
+Adicionar:
+
+Tempo para:
+
+Voltar ao BOT
+
+Fechar Ticket
+
+Enviar lembrete
+
+Cancelar atendimento
+
+Resetar conversa
+
+Tudo editável.
+
+11. Painel de Cliente
+
+Adicionar:
+
+BOT
+
+HUMANO
+
+Ticket
+
+Último atendimento
+
+Última mensagem
+
+Tempo de inatividade
+
+Responsável
+
+Último departamento
+
+Última filial
+12. Painel do Ticket
+
+Adicionar ações:
+
+Assumir Atendimento
+
+Devolver ao BOT
+
+Encerrar Ticket
+
+Transferir
+
+Adicionar observação
+
+Histórico completo
+13. Configuração de IA
+
+Permitir escolher:
+
+Responder apenas clientes
+
+Nunca responder bots
+
+Nunca responder IA
+
+Nunca responder mensagens automáticas
+14. Sistema Anti Loop
+
+Nunca responder:
+
+mensagem repetida
+mesma mensagem enviada diversas vezes
+eco do próprio bot
+webhook
+mensagens enviadas pela API
+mensagens reenviadas pelo sistema
+15. Anti Flood
+
+Configurar:
+
+Máximo mensagens
+
+Tempo mínimo
+
+Fila
+
+Cooldown
+16. Logs
+
+Salvar:
+
+Quem ativou HUMANO
+
+Quem voltou BOT
+
+Quando
+
+IP
+
+Operador
+
+Motivo
+17. Dashboard
+
+Mostrar:
+
+Clientes em BOT
+
+Clientes em HUMANO
+
+Tickets Abertos
+
+Tickets Fechados
+
+Tempo médio
+
+Tempo humano
+
+Tempo automático
+18. Configuração Geral
+
+Tudo deverá ser editável.
+
+Nada ficará fixo.
+
+Exemplo:
+
+Modo BOT
+
+Modo HUMANO
+
+Timers
+
+Filtros
+
+Mensagens
+
+Fluxos
+
+Categorias
+
+IA
+
+Detecção
+
+Menus
+
+Respostas
+
+Timeout
+
+Integrações
+19. Banco de Dados
+
+Criar tabelas para suportar as novas funcionalidades:
+
+automation_settings
+conversation_modes
+bot_filters
+automation_logs
+human_sessions
+customer_preferences
+
+Evite gravar novas configurações em uma única tabela genérica se isso dificultar manutenção. Use tabelas específicas quando fizer sentido.
+
+20. Objetivo Final
+
+O sistema deverá funcionar como plataformas profissionais de atendimento:
+
+Atendimento híbrido (Bot + Humano).
+Totalmente configurável pelo painel.
+Nenhuma regra importante fixa no código.
+Todas as mensagens editáveis.
+Todos os tempos configuráveis.
+Cliente pode alternar entre BOT e HUMANO a qualquer momento.
+Detecção automática de atendimento humano.
+Bloqueio inteligente de bots, IAs e mensagens automáticas.
+Recuperação automática do último atendimento.
+Interface simples para operadores administrarem as conversas.
+Arquitetura preparada para futuras integrações e novas regras sem necessidade de alterar a lógica principal do sistema.

@@ -252,8 +252,6 @@ export default function Tickets() {
                 <SelectItem value="not_closed">Ativos (não encerrados)</SelectItem>
                 <SelectItem value="open">Aberto</SelectItem>
                 <SelectItem value="in_progress">Em Atendimento</SelectItem>
-                <SelectItem value="waiting_client">Ag. Cliente</SelectItem>
-                <SelectItem value="waiting_analyst">Ag. Analista</SelectItem>
                 <SelectItem value="closed">Fechado</SelectItem>
               </SelectContent>
             </Select>

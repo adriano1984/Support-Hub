@@ -406,14 +406,18 @@ export default function Dashboard() {
   const slaBreached = stats.slaBreached ?? 0;
   const slaMet = stats.slaMet ?? stats.totalAll;
 
+  const resolRate = stats.totalAll > 0
+    ? Math.round((stats.totalClosed / stats.totalAll) * 100)
+    : 0;
+
   const kpiCards: KpiCardProps[] = [
     { label: "Total Geral", value: stats.totalAll, icon: BarChart2, color: "text-primary", bg: "bg-primary/10" },
     { label: "Abertos", value: stats.totalOpen, icon: Ticket, color: "text-blue-500", bg: "bg-blue-500/10" },
     { label: "Em Atendimento", value: stats.totalInProgress, icon: Clock, color: "text-amber-500", bg: "bg-amber-500/10" },
-    { label: "Aguardando Cliente", value: stats.totalResolved, icon: Users, color: "text-purple-500", bg: "bg-purple-500/10" },
     { label: "Encerrados", value: stats.totalClosed, icon: XCircle, color: "text-slate-500", bg: "bg-slate-500/10" },
     { label: "Abertos Hoje", value: stats.totalToday, icon: TrendingUp, color: "text-indigo-500", bg: "bg-indigo-500/10" },
     { label: "Encerrados Hoje", value: stats.closedToday ?? 0, icon: CheckCircle, color: "text-green-500", bg: "bg-green-500/10" },
+    { label: "SLA Cumprido", value: `${slaPercent}%`, icon: Target, color: slaPercent >= 90 ? "text-green-500" : slaPercent >= 70 ? "text-amber-500" : "text-red-500", bg: slaPercent >= 90 ? "bg-green-500/10" : "bg-red-500/10", subtitle: `${slaBreached} vencido(s)` },
     { label: "SLA Vencido", value: slaBreached, icon: AlertTriangle, color: "text-red-500", bg: "bg-red-500/10" },
     { label: "Reabertos", value: stats.totalReopened ?? 0, icon: RefreshCw, color: "text-orange-500", bg: "bg-orange-500/10" },
     {
@@ -422,6 +426,7 @@ export default function Dashboard() {
       icon: Clock, color: "text-teal-500", bg: "bg-teal-500/10",
       subtitle: stats.avgFirstResponseHours != null ? `1ª resp: ${((stats.avgFirstResponseHours) * 60).toFixed(0)}min` : undefined,
     },
+    { label: "Taxa Resolução", value: `${resolRate}%`, icon: Award, color: "text-emerald-500", bg: "bg-emerald-500/10", subtitle: `${stats.totalClosed}/${stats.totalAll} encerrados` },
   ];
 
   const trendData = stats.last30days ?? [];

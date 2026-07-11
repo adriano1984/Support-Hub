@@ -4,6 +4,7 @@ import {
   Smartphone, Menu, UserCheck, LogOut, ChevronDown, MessageCircleCode,
   ShieldCheck, ClipboardList, Bell, Search, X, Circle, Users2,
   AlertTriangle, Monitor, Home as HomeIcon, KeyRound, Loader2, Package,
+  ListTodo, ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -18,9 +19,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { API, type RecentActivity } from "@/lib/api";
+import { API, type RecentActivity, type Ticket as TicketType } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -91,6 +92,156 @@ const ACTION_LABELS: Record<string, string> = {
   note_added: "Nota interna",
   closed: "Fechado",
 };
+
+// ─── Quick Ticket Switcher ─────────────────────────────────────────────────────
+function QuickTicketSwitcher() {
+  const [open, setOpen] = useState(false);
+  const [tickets, setTickets] = useState<TicketType[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [, navigate] = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await API.listTickets({ status: "not_closed", limit: 50 });
+      setTickets(res.tickets ?? []);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) load();
+  }, [open, load]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const STATUS_DOT: Record<string, string> = {
+    open: "bg-blue-500",
+    in_progress: "bg-amber-500",
+    closed: "bg-slate-400",
+  };
+  const STATUS_LBL: Record<string, string> = {
+    open: "Aberto",
+    in_progress: "Em Atend.",
+  };
+
+  const open_tickets = tickets.filter(t => t.status === "open");
+  const inprog_tickets = tickets.filter(t => t.status === "in_progress");
+  const total = tickets.length;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2.5 rounded-full shadow-lg border text-sm font-semibold transition-all ${
+          open
+            ? "bg-primary text-primary-foreground border-primary"
+            : "bg-background text-foreground border-border hover:bg-accent"
+        }`}
+        title="Troca rápida de chamados"
+      >
+        <ListTodo className="h-4 w-4" />
+        <span className="hidden sm:inline">Chamados</span>
+        {total > 0 && (
+          <span className={`h-5 min-w-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${open ? "bg-white/20 text-white" : "bg-primary text-primary-foreground"}`}>
+            {total > 99 ? "99+" : total}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="fixed bottom-20 right-6 z-50 w-80 sm:w-96 max-h-[70vh] border rounded-xl shadow-2xl bg-popover flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+            <div className="flex items-center gap-2">
+              <ListTodo className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold">Chamados Ativos</span>
+              <span className="text-xs text-muted-foreground">({total})</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={load}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors p-1"
+                title="Atualizar"
+              >
+                {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "↻"}
+              </button>
+              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground p-1">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1">
+            {loading && tickets.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                Carregando…
+              </div>
+            ) : tickets.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">Nenhum chamado ativo.</div>
+            ) : (
+              <div>
+                {[
+                  { label: `Em Atendimento (${inprog_tickets.length})`, color: "text-amber-600 dark:text-amber-400", items: inprog_tickets },
+                  { label: `Abertos (${open_tickets.length})`, color: "text-blue-600 dark:text-blue-400", items: open_tickets },
+                ].map(group => (
+                  group.items.length > 0 && (
+                    <div key={group.label}>
+                      <div className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wide ${group.color} bg-muted/20 border-b`}>
+                        {group.label}
+                      </div>
+                      {group.items.map(ticket => (
+                        <button
+                          key={ticket.id}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b last:border-b-0"
+                          onClick={() => { navigate(`/tickets/${ticket.id}`); setOpen(false); }}
+                        >
+                          <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[ticket.status] ?? "bg-slate-400"}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-primary">#{ticket.ticketNumber}</span>
+                              <span className="text-[10px] text-muted-foreground">{STATUS_LBL[ticket.status] ?? ticket.status}</span>
+                            </div>
+                            <div className="text-xs text-foreground truncate font-medium">
+                              {ticket.clientName || "—"}
+                            </div>
+                            {ticket.categoryName && (
+                              <div className="text-[10px] text-muted-foreground truncate">{ticket.categoryName}</div>
+                            )}
+                          </div>
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+
+          <div className="border-t px-4 py-2.5 flex items-center justify-between bg-muted/20">
+            <span className="text-[10px] text-muted-foreground">Abertos: {open_tickets.length} · Em Atend.: {inprog_tickets.length}</span>
+            <button
+              className="text-[10px] text-primary hover:underline font-medium"
+              onClick={() => { navigate("/tickets"); setOpen(false); }}
+            >
+              Ver todos →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -475,6 +626,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <NavContent />
         </ScrollArea>
       </aside>
+
+      {/* Quick Ticket Switcher — floating button always visible */}
+      <QuickTicketSwitcher />
 
       <div className="flex flex-1 flex-col">
         {/* Mobile header */}

@@ -678,18 +678,14 @@ export default function TicketDetail() {
 
         {(() => {
           const isAdminUser = ["admin", "manager"].includes(user?.role ?? "");
-          const ALL_STATUSES = ["open", "in_progress", "waiting_client", "waiting_analyst", "closed"] as const;
+          const ALL_STATUSES = ["open", "in_progress", "closed"] as const;
           const STATUS_FLOW: Record<string, string[]> = {
-            open:            ["open", "in_progress"],
-            in_progress:     ["in_progress", "waiting_client", "waiting_analyst", "closed"],
-            waiting_client:  ["waiting_client", "in_progress", "closed"],
-            waiting_analyst: ["waiting_analyst", "in_progress", "closed"],
-            closed:          ["closed"],
+            open:        ["open", "in_progress"],
+            in_progress: ["in_progress", "closed"],
+            closed:      ["closed"],
           };
           const STATUS_NAMES: Record<string, string> = {
-            open: "Aberto", in_progress: "Em Atendimento",
-            waiting_client: "Ag. Cliente", waiting_analyst: "Ag. Analista",
-            closed: "Fechado",
+            open: "Aberto", in_progress: "Em Atendimento", closed: "Fechado",
           };
           const allowedStatuses = isAdminUser
             ? [...ALL_STATUSES]

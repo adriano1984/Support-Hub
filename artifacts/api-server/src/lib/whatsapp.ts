@@ -208,23 +208,43 @@ export async function startWhatsApp() {
           // Senão: analista respondeu pelo celular — salvar como outbound no chamado ativo
           const mJid = msg.key.remoteJid ?? "";
           const mPhone = mJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
-          if (mPhone) {
-            const mTicket = db.prepare(
-              "SELECT t.id, u.name as agent_name FROM tickets t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.whatsapp_phone = ? AND t.status NOT IN ('closed') ORDER BY t.updated_at DESC LIMIT 1"
-            ).get(mPhone) as { id: number; agent_name: string | null } | undefined;
-            if (mTicket) {
-              const { type: mType, content: mContent } = detectMessage(msg);
-              if (mContent) {
-                const senderLabel = mTicket.agent_name ? `📱 ${mTicket.agent_name}` : "📱 Celular";
-                db.prepare(
-                  "INSERT INTO messages (ticket_id, direction, type, content, sender_name) VALUES (?, 'outbound', ?, ?, ?)"
-                ).run(mTicket.id, mType, mContent, senderLabel);
-                db.prepare("UPDATE tickets SET last_message_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(mTicket.id);
-                broadcastEvent("message:new", { ticketId: mTicket.id });
-                logger.info({ phone: mPhone, ticketId: mTicket.id, sender: senderLabel }, "Mobile outbound message captured");
-              }
-            }
+          if (!mPhone) continue;
+          const { type: mType, content: mContent } = detectMessage(msg);
+          if (!mContent) continue;
+
+          // Buscar chamado ativo para este telefone
+          let mTicket = db.prepare(
+            "SELECT t.id, u.name as agent_name FROM tickets t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.whatsapp_phone = ? AND t.status NOT IN ('closed') ORDER BY t.updated_at DESC LIMIT 1"
+          ).get(mPhone) as { id: number; agent_name: string | null } | undefined;
+
+          // Sem chamado ativo → criar automaticamente em modo humano (operador iniciou conversa)
+          if (!mTicket) {
+            const mConv = getConvState(mPhone);
+            const clientName = mConv.clientName ?? mConv.pushName ?? null;
+            const ticketNumber = nextTicketNumber();
+            const mResult = db.prepare(
+              `INSERT INTO tickets (ticket_number, whatsapp_phone, client_name, description, status, last_message_at, bot_mode)
+               VALUES (?, ?, ?, 'Atendimento iniciado pelo operador', 'open', datetime('now'), 'human')`
+            ).run(ticketNumber, mPhone, clientName);
+            const newTicketId = mResult.lastInsertRowid as number;
+            mConv.ticketId = newTicketId;
+            mConv.mode = "human";
+            mConv.step = "active";
+            db.prepare(
+              "INSERT INTO activity_log (ticket_id, action, detail) VALUES (?, 'ticket_opened', ?)"
+            ).run(newTicketId, "Chamado criado automaticamente — operador iniciou conversa pelo celular");
+            broadcastEvent("ticket:new", { ticketId: newTicketId });
+            mTicket = { id: newTicketId, agent_name: null };
+            logger.info({ phone: mPhone, ticketId: newTicketId }, "Auto-ticket created for operator-initiated conversation");
           }
+
+          const senderLabel = mTicket.agent_name ? `📱 ${mTicket.agent_name}` : "📱 Operador";
+          db.prepare(
+            "INSERT INTO messages (ticket_id, direction, type, content, sender_name) VALUES (?, 'outbound', ?, ?, ?)"
+          ).run(mTicket.id, mType, mContent, senderLabel);
+          db.prepare("UPDATE tickets SET last_message_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(mTicket.id);
+          broadcastEvent("message:new", { ticketId: mTicket.id });
+          logger.info({ phone: mPhone, ticketId: mTicket.id, sender: senderLabel }, "Mobile outbound message captured");
           continue;
         }
 
@@ -739,14 +759,16 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
         if (lastTicket) {
           conv.branchId = lastTicket.branch_id;
           conv.departmentId = lastTicket.department_id;
-          conv.categoryId = lastTicket.category_id;
-          conv.step = "description";
+          conv.categoryId = null; // deixar cliente escolher a categoria
+          conv.step = "category";
 
           const branchRow = db.prepare("SELECT name FROM branches WHERE id = ?").get(lastTicket.branch_id) as { name: string } | undefined;
           const deptRow = db.prepare("SELECT name FROM departments WHERE id = ?").get(lastTicket.department_id) as { name: string } | undefined;
-          const catRow = db.prepare("SELECT name FROM categories WHERE id = ?").get(lastTicket.category_id) as { name: string } | undefined;
 
-          const skipMsg = `Olá, ${nome}! 👋\n\nIdentifiquei seu cadastro. Manteremos as mesmas informações do seu último chamado:\n\n📍 *Filial:* ${branchRow?.name ?? "—"}\n🏢 *Departamento:* ${deptRow?.name ?? "—"}\n🏷️ *Categoria:* ${catRow?.name ?? "—"}\n\nPor favor, descreva o problema ou solicitação:`;
+          const categories = db.prepare("SELECT id, name FROM categories WHERE active = 1 ORDER BY id").all() as Array<{ id: number; name: string }>;
+          const catList = buildNumberedList(categories);
+
+          const skipMsg = `Olá, *${nome}*! 👋\n\nIdentifiquei seu cadastro:\n📍 *Filial:* ${branchRow?.name ?? "—"}\n🏢 *Departamento:* ${deptRow?.name ?? "—"}\n\nSelecione a *categoria* do chamado:\n\n${catList}`;
           await sendMessage(phone, skipMsg);
           savePreTicketMessage(phone, "outbound", "text", skipMsg, "Bot");
           startPreTicketInactivity(phone);
@@ -763,9 +785,25 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
       clearInactivityTimer(phone);
       conv.step = "supplier";
       conv.mode = "supplier";
-      conv.ticketId = null;
       const supConvId = getOrCreateSupplierConversation(phone, nome || null);
       conv.supplierConvId = supConvId;
+
+      // Criar chamado automaticamente para o modo fornecedor
+      if (!conv.ticketId) {
+        const clientName = (conv.clientName ?? conv.pushName ?? nome) || null;
+        const ticketNumber = nextTicketNumber();
+        const supResult = db.prepare(
+          `INSERT INTO tickets (ticket_number, whatsapp_phone, client_name, description, status, last_message_at, bot_mode)
+           VALUES (?, ?, ?, 'Conversa de fornecedor', 'open', datetime('now'), 'supplier')`
+        ).run(ticketNumber, phone, clientName);
+        const supTicketId = supResult.lastInsertRowid as number;
+        conv.ticketId = supTicketId;
+        db.prepare(
+          "INSERT INTO activity_log (ticket_id, action, detail) VALUES (?, 'ticket_opened', ?)"
+        ).run(supTicketId, "Chamado criado automaticamente — modo fornecedor");
+        broadcastEvent("ticket:new", { ticketId: supTicketId });
+      }
+
       const welcomeMsg = getAutoMessage("supplier_welcome");
       if (welcomeMsg) {
         await sendMessage(phone, welcomeMsg);
@@ -980,14 +1018,16 @@ export async function notifyStatusChange(
     clearInactivityTimer(ticket.whatsapp_phone);
 
     const conv = getConvState(ticket.whatsapp_phone);
-    if (conv.mode !== "human") {
+    // Modo humano e modo fornecedor: NÃO enviar mensagem de encerramento ao cliente
+    if (conv.mode !== "human" && conv.mode !== "supplier") {
       const template = getAutoMessage("status_resolved");
       if (template) {
         const message = template.replace("{ticketNumber}", ticket.ticket_number);
         await sendMessage(ticket.whatsapp_phone, message);
       }
-      resetConv(ticket.whatsapp_phone, "closed");
     }
+    // Reset sempre ao fechar, para o bot poder atender novamente se o cliente mandar msg
+    resetConv(ticket.whatsapp_phone, "closed");
     return;
   }
 }

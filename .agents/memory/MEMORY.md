@@ -1,6 +1,2 @@
-- [SuportyHub project](suportyhub.md) — WhatsApp helpdesk in Brazilian Portuguese; SQLite via node:sqlite, Baileys, SSE, React+Vite+shadcn
-- [Supplier conversation flow](supplier-conversations.md) — supplier messages saved to DB; manager/admin-only page at /supplier-conversations.
-- [Greeting message fix](greeting-fix.md) — in_progress greeting removed "Atenciosamente" from notifyStatusChange; AI via OpenRouter unavailable on free tier.
-- [Ticket navigation context](ticket-navigation.md) — TicketNavigationProvider shares ticket ID list between Tickets list and TicketDetail for prev/next navigation.
-- [Local AI engine](local-ai.md) — overlay/ai-local.ts: free AI using cosine similarity on ticket history; falls back from Groq automatically; no API key needed.
-- [Returning client recognition](returning-client.md) — WhatsApp bot detects returning clients by phone lookup and skips branch/dept/category, going straight to description.
+- [Status sem Ag.Cliente/Ag.Analista](status-flow.md) — apenas open/in_progress/closed; fluxo forward-only para não-admins.
+- [Bot WhatsApp — comportamento por modo](whatsapp-modes.md) — modos human/supplier/bot definem silêncio, criação de ticket e notificação de fechamento.
