@@ -203,6 +203,10 @@ export function initDatabase() {
   cfg("business_days", "1,2,3,4,5");
   cfg("outside_hours_msg", "Nosso horário de atendimento é de {inicio} às {fim}, de segunda a sexta. Retornaremos em breve!");
 
+  // Terminologia configurável
+  cfg("client_label", "Colaborador");
+  cfg("clients_label", "Colaboradores");
+
   // Seed de dados de referência
   const row = db.prepare("SELECT value FROM settings WHERE key = 'seed_version'").get() as { value: string } | undefined;
   const currentVersion = row ? parseInt(row.value) : 0;

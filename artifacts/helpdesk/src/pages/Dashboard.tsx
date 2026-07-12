@@ -32,7 +32,7 @@ const DAYS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
 // ─── Export helpers ───────────────────────────────────────────────────────────
 function exportCsv(tickets: any[]) {
-  const header = ["Chamado","Cliente","Telefone","Filial","Departamento","Categoria","Status","Técnico","Descrição","Criado em","Atualizado em"];
+  const header = ["Chamado","Colaborador","Telefone","Filial","Departamento","Categoria","Status","Técnico","Descrição","Criado em","Atualizado em"];
   const rows = tickets.map(t => [
     t.ticket_number, t.client_name ?? "", t.whatsapp_phone,
     t.branch ?? "", t.department ?? "", t.category ?? "",

@@ -165,6 +165,24 @@ export default function SystemConfig() {
                 hint="Nome exibido no histórico de chat como remetente do bot."
               />
               <ConfigField
+                label='Termo para "Colaborador" (singular)'
+                value={config.client_label ?? ""}
+                onChange={v => set("client_label", v)}
+                onSave={() => saveKey("client_label")}
+                saving={isSaving("client_label")}
+                dirty={isDirty("client_label")}
+                hint='Como o sistema se refere ao usuário final. Ex: "Colaborador", "Cliente", "Usuário". Padrão: Colaborador.'
+              />
+              <ConfigField
+                label='Termo para "Colaboradores" (plural)'
+                value={config.clients_label ?? ""}
+                onChange={v => set("clients_label", v)}
+                onSave={() => saveKey("clients_label")}
+                saving={isSaving("clients_label")}
+                dirty={isDirty("clients_label")}
+                hint='Versão plural do termo acima. Ex: "Colaboradores", "Clientes". Padrão: Colaboradores.'
+              />
+              <ConfigField
                 label="Prefixo do Chamado"
                 value={config.ticket_prefix ?? ""}
                 onChange={v => set("ticket_prefix", v)}

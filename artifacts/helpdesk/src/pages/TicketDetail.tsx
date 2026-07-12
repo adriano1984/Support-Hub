@@ -24,6 +24,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { API, type User, type CannedResponse, type ActivityEntry } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useClientLabel } from "@/hooks/useSystemConfig";
 
 const mediaTypeLabels: Record<string, string> = {
   audio: "Áudio", image: "Imagem", video: "Vídeo", document: "Documento",
@@ -342,6 +344,8 @@ export default function TicketDetail() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; type: "image" | "video" | "pdf" | "audio"; mime?: string } | null>(null);
+  const clientLabel = useClientLabel();
 
   const { data: detail, isLoading } = useGetTicket(ticketId, {
     query: { enabled: !!ticketId, refetchInterval: 5000, queryKey: getGetTicketQueryKey(ticketId) }
@@ -498,11 +502,15 @@ export default function TicketDetail() {
   const sendAudioBlob = async (blob: Blob) => {
     setAudioSending(true);
     try {
-      const arrayBuffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
       await API.sendAudioMessage(ticketId, base64);
       toast({ title: "Áudio enviado ✓", description: "Mensagem de voz enviada com sucesso." });
       queryClient.invalidateQueries({ queryKey: getGetTicketQueryKey(ticketId) });
@@ -534,10 +542,12 @@ export default function TicketDetail() {
       if (msg.type === "image") {
         return (
           <div className="flex flex-col gap-1.5">
-            <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="block">
-              <img src={msg.mediaUrl} alt="Imagem"
-                className="max-w-[260px] max-h-60 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity border" />
-            </a>
+            <img
+              src={msg.mediaUrl}
+              alt="Imagem"
+              className="max-w-[260px] max-h-60 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity border"
+              onClick={() => setLightbox({ src: msg.mediaUrl!, type: "image" })}
+            />
             {caption && <p className="text-sm whitespace-pre-wrap">{caption}</p>}
           </div>
         );
@@ -545,33 +555,51 @@ export default function TicketDetail() {
       if (msg.type === "audio") {
         const mime = (msg as any).mediaMime as string | null;
         return (
-          <audio
-            controls
-            preload="metadata"
-            className="max-w-[260px]"
-            style={{ height: 40 }}
-          >
-            <source src={msg.mediaUrl!} type={mime ?? "audio/ogg; codecs=opus"} />
-            {mime !== "audio/mp4" && <source src={msg.mediaUrl!} type="audio/mp4" />}
-            <a href={msg.mediaUrl!} target="_blank" rel="noopener noreferrer" className="underline text-xs">Baixar áudio</a>
-          </audio>
+          <div className="flex flex-col gap-1">
+            <audio
+              key={msg.mediaUrl}
+              controls
+              preload="metadata"
+              className="max-w-[260px]"
+              style={{ height: 40 }}
+            >
+              <source src={msg.mediaUrl!} type={mime ?? "audio/webm; codecs=opus"} />
+              <source src={msg.mediaUrl!} type="audio/ogg; codecs=opus" />
+              <source src={msg.mediaUrl!} type="audio/webm" />
+            </audio>
+            <button
+              onClick={() => setLightbox({ src: msg.mediaUrl!, type: "audio", mime: mime ?? undefined })}
+              className="text-xs underline opacity-60 hover:opacity-100 text-left"
+            >
+              Abrir player expandido
+            </button>
+          </div>
         );
       }
       if (msg.type === "video") {
         return (
           <div className="flex flex-col gap-1.5">
-            <video controls src={msg.mediaUrl} className="max-w-[260px] max-h-48 rounded-lg border" />
+            <video
+              controls
+              src={msg.mediaUrl}
+              className="max-w-[260px] max-h-48 rounded-lg border cursor-pointer"
+              onClick={() => setLightbox({ src: msg.mediaUrl!, type: "video" })}
+            />
             {caption && <p className="text-sm whitespace-pre-wrap">{caption}</p>}
           </div>
         );
       }
       if (msg.type === "document") {
+        const isPdf = msg.mediaUrl.toLowerCase().endsWith(".pdf") || caption.toLowerCase().includes(".pdf");
         return (
           <div className="flex items-center gap-2 text-sm">
             <FileText className="h-4 w-4 shrink-0 opacity-70" />
-            <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80 truncate">
+            <button
+              onClick={() => setLightbox({ src: msg.mediaUrl!, type: isPdf ? "pdf" : "pdf" })}
+              className="underline hover:opacity-80 truncate text-left"
+            >
               {caption || "Documento"}
-            </a>
+            </button>
           </div>
         );
       }
@@ -727,7 +755,7 @@ export default function TicketDetail() {
                   <div key={msg.id} className={`flex flex-col ${isInbound ? "items-start" : isInternal ? "items-center" : "items-end"}`}>
                     <div className="flex items-baseline gap-2 mb-1 px-1">
                       <span className="text-xs text-muted-foreground font-medium">
-                        {isInbound ? ticket.clientName || "Cliente" : msg.senderName || "Sistema"}
+                        {isInbound ? ticket.clientName || clientLabel.singular : msg.senderName || "Sistema"}
                       </span>
                       <span className="text-[10px] text-muted-foreground/70">
                         {formatTimeBR(msg.createdAt)}
@@ -756,13 +784,13 @@ export default function TicketDetail() {
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   {ticket.status === "closed"
                     ? "Chamado encerrado — não é possível enviar mensagens."
-                    : "Mude o status para \"Em Atendimento\" para responder ao cliente."}
+                    : `Mude o status para "Em Atendimento" para responder ao ${clientLabel.singular.toLowerCase()}.`}
                 </div>
               )}
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <Button variant={effectiveMode === "reply" ? "secondary" : "ghost"} size="sm"
                   onClick={() => handleModeChange("reply")} className="h-8 rounded-full">
-                  <Send className="h-3 w-3 mr-2" /> Responder ao Cliente
+                  <Send className="h-3 w-3 mr-2" /> Responder ao {clientLabel.singular}
                 </Button>
                 {!isAnalyst && (
                   <Button variant={effectiveMode === "note" ? "secondary" : "ghost"} size="sm"
@@ -823,11 +851,17 @@ export default function TicketDetail() {
                     effectiveMode === "reply"
                       ? ticket.status !== "in_progress"
                         ? "Mude o status para Em Atendimento para digitar..."
-                        : "Digite uma mensagem para o cliente..."
+                        : `Digite uma mensagem para o ${clientLabel.singular.toLowerCase()}... (Enter para enviar, Shift+Enter para quebrar linha)`
                       : "Digite uma nota interna..."
                   }
                   value={effectiveMode === "reply" ? replyText : noteText}
                   onChange={(e) => effectiveMode === "reply" ? setReplyText(e.target.value) : setNoteText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   className={`flex-1 resize-none rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring transition bg-background ${
                     effectiveMode === "note" ? "border-yellow-500/50 focus:ring-yellow-500 bg-yellow-500/5" : ""
                   }`}
@@ -889,7 +923,7 @@ export default function TicketDetail() {
 
               <div className="space-y-3">
                 <div>
-                  <div className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wider">Cliente</div>
+                  <div className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wider">{clientLabel.singular}</div>
                   <div className="font-medium">{ticket.clientName || "-"}</div>
                   <div className="text-sm font-mono text-muted-foreground">{ticket.whatsappPhone}</div>
                 </div>
@@ -938,6 +972,71 @@ export default function TicketDetail() {
           </ScrollArea>
         </aside>
       </div>
+
+      {/* ── Lightbox Modal ──────────────────────────────────────────────────── */}
+      <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
+        <DialogContent className="max-w-5xl w-full p-2 bg-black/95 border-0">
+          <DialogTitle className="sr-only">Visualizar mídia</DialogTitle>
+          {lightbox?.type === "image" && (
+            <div className="flex items-center justify-center min-h-[60vh] max-h-[90vh]">
+              <img
+                src={lightbox.src}
+                alt="Imagem"
+                className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              />
+            </div>
+          )}
+          {lightbox?.type === "video" && (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <video
+                controls
+                autoPlay
+                src={lightbox.src}
+                className="max-w-full max-h-[85vh] rounded-lg"
+              />
+            </div>
+          )}
+          {lightbox?.type === "audio" && (
+            <div className="flex flex-col items-center justify-center gap-4 p-8 min-h-[200px]">
+              <Music className="h-16 w-16 text-white/60" />
+              <audio
+                key={lightbox.src}
+                controls
+                autoPlay
+                preload="auto"
+                className="w-full max-w-md"
+              >
+                <source src={lightbox.src} type={lightbox.mime ?? "audio/webm; codecs=opus"} />
+                <source src={lightbox.src} type="audio/ogg; codecs=opus" />
+                <source src={lightbox.src} type="audio/webm" />
+              </audio>
+              <a href={lightbox.src} download className="text-xs text-white/50 hover:text-white underline">
+                Baixar áudio
+              </a>
+            </div>
+          )}
+          {lightbox?.type === "pdf" && (
+            <div className="flex flex-col min-h-[80vh]">
+              <div className="flex justify-between items-center px-2 py-1 mb-1">
+                <span className="text-white/60 text-sm">Documento</span>
+                <a
+                  href={lightbox.src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-white/50 hover:text-white underline"
+                >
+                  Abrir em nova aba
+                </a>
+              </div>
+              <iframe
+                src={lightbox.src}
+                className="flex-1 w-full rounded-lg min-h-[75vh]"
+                title="Documento"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

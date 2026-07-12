@@ -306,7 +306,7 @@ export default function Tickets() {
               <TableRow>
                 <TableHead className="w-8"></TableHead>
                 <TableHead className="w-24">Chamado</TableHead>
-                <TableHead>Cliente</TableHead>
+                <TableHead>Colaborador</TableHead>
                 <TableHead className="hidden md:table-cell">Filial</TableHead>
                 <TableHead className="hidden lg:table-cell">Categoria</TableHead>
                 <TableHead>Status</TableHead>

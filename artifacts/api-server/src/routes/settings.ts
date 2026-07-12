@@ -175,6 +175,7 @@ const SYSTEM_CONFIG_KEYS = [
   "ask_description_retry_msg","returning_client_msg","analyst_greeting_template",
   "business_hours_enabled","business_hours_start","business_hours_end",
   "business_days","outside_hours_msg",
+  "client_label","clients_label",
 ];
 
 router.get("/settings/system-config", (_req, res) => {

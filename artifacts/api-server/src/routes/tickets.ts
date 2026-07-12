@@ -401,17 +401,28 @@ router.post("/tickets/:id/audio", async (req, res): Promise<void> => {
 
   let oggBuffer = audioBuffer;
   let mediaUrl: string | null = null;
+  let mediaMime = "audio/ogg; codecs=opus";
 
   try {
     fs.writeFileSync(tmpIn, audioBuffer);
+    const ffmpegBin = "ffmpeg";
     execSync(
-      `ffmpeg -y -i "${tmpIn}" -acodec libopus -b:a 64k -vn "${outPath}"`,
+      `${ffmpegBin} -y -i "${tmpIn}" -acodec libopus -b:a 64k -vn "${outPath}"`,
       { stdio: "pipe" }
     );
     oggBuffer = fs.readFileSync(outPath);
     mediaUrl = `/api/media/${outFilename}`;
   } catch (ffErr) {
-    logger.warn({ err: ffErr }, "ffmpeg audio conversion failed — sending original");
+    logger.warn({ err: ffErr }, "ffmpeg audio conversion failed — saving original");
+    // Salvar o áudio original mesmo sem conversão (WebM/OGG/MP4)
+    const ext = audioBuffer[0] === 0x1a && audioBuffer[1] === 0x45 ? "webm" : "ogg";
+    const fallbackFilename = `${tag}.${ext}`;
+    const fallbackPath = path.join(MEDIA_DIR, fallbackFilename);
+    try {
+      fs.writeFileSync(fallbackPath, audioBuffer);
+      mediaUrl = `/api/media/${fallbackFilename}`;
+      mediaMime = ext === "webm" ? "audio/webm; codecs=opus" : "audio/ogg; codecs=opus";
+    } catch { /* ignore */ }
   } finally {
     try { fs.unlinkSync(tmpIn); } catch { /* ignore */ }
   }
@@ -421,7 +432,7 @@ router.post("/tickets/:id/audio", async (req, res): Promise<void> => {
   const content = `🎤 Áudio enviado por ${user.name}`;
   db.prepare(
     "INSERT INTO messages (ticket_id, direction, type, content, sender_name, media_url, media_mime) VALUES (?, 'outbound', 'audio', ?, ?, ?, ?)"
-  ).run(id, content, user.name, mediaUrl, mediaUrl ? "audio/ogg; codecs=opus" : null);
+  ).run(id, content, user.name, mediaUrl, mediaMime);
   db.prepare("UPDATE tickets SET last_message_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id);
   broadcastEvent("message:new", { ticketId: id });
 
