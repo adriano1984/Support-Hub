@@ -971,18 +971,24 @@ async function handleIncomingMessage(sock: WASocket, phone: string, pushName: st
 
   // ── STEP: ACTIVE — chamado aberto, armazena mensagens. SEM inatividade ─────
   if (conv.step === "active" && conv.ticketId) {
-    // Se o chamado estava "closed" e o cliente respondeu, reabrir automaticamente
     const currentTicket = db.prepare("SELECT status FROM tickets WHERE id = ?").get(conv.ticketId) as { status: string } | undefined;
+
+    // Se o chamado foi encerrado pelo agente, NÃO reabrir — iniciar NOVO chamado
     if (currentTicket?.status === "closed") {
-      db.prepare("UPDATE tickets SET status = 'open', updated_at = datetime('now') WHERE id = ?").run(conv.ticketId);
-      db.prepare("INSERT INTO activity_log (ticket_id, action, detail) VALUES (?, 'status_changed', ?)").run(
-        conv.ticketId, "Chamado reaberto automaticamente — cliente enviou nova mensagem"
-      );
+      savePreTicketMessage(phone, "inbound", msgType, msgContent, nome || "Cliente");
+      conv.step = "menu";
+      conv.ticketId = null;
+      conv.branchId = null;
+      conv.departmentId = null;
+      conv.categoryId = null;
+      await sendWelcomeMenu(phone, nome);
+      startPreTicketInactivity(phone);
+      return;
     }
+
     await saveInboundMsg(sock, conv.ticketId, msgType, msgContent, nome, msg);
     db.prepare("UPDATE tickets SET last_message_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(conv.ticketId);
     broadcastEvent("message:new", { ticketId: conv.ticketId });
-    // Cancelar encerramento automático por SLA quando o cliente responde
     processarCliente(conv.ticketId);
     return;
   }
