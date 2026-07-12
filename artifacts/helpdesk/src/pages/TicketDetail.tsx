@@ -363,6 +363,18 @@ export default function TicketDetail() {
     API.listUsers().then(u => setUsers(u.filter(x => x.active))).catch(() => {});
   }, []);
 
+  // Navegação por teclado entre chamados (← anterior | → próximo)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+      if (e.key === "ArrowLeft" && prev) navigate(`/tickets/${prev}`);
+      if (e.key === "ArrowRight" && next) navigate(`/tickets/${next}`);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [prev, next, navigate]);
+
   // Atualização em tempo real via SSE
   useEffect(() => {
     const handler = (e: Event) => {

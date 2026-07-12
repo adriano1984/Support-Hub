@@ -195,12 +195,25 @@ router.get("/dashboard/alerts", (_req, res) => {
 router.get("/dashboard/monthly", (req, res) => {
   const { branchId, departmentId, categoryId } = req.query;
 
+  // Date range: months (1–60, default 24) ending at endDate (YYYY-MM, default now)
+  const months = Math.min(Math.max(parseInt((req.query.months as string) || "24"), 1), 60);
+  const rawEnd = (req.query.endDate as string) || new Date().toISOString().slice(0, 7);
+  const [eY, eM] = rawEnd.split("-").map(Number);
+  const toD = new Date(eY, eM, 1);           // first day of month AFTER endDate (exclusive upper)
+  const fromD = new Date(eY, eM - 1 - months, 1); // first day of first included month
+  const fromDateStr = `${fromD.getFullYear()}-${String(fromD.getMonth() + 1).padStart(2, "0")}-01`;
+  const toDateStr   = `${toD.getFullYear()}-${String(toD.getMonth() + 1).padStart(2, "0")}-01`;
+  const subMonths = Math.min(months, 12);
+  const subFromD = new Date(eY, eM - 1 - subMonths, 1);
+  const subFromStr = `${subFromD.getFullYear()}-${String(subFromD.getMonth() + 1).padStart(2, "0")}-01`;
+  const refYear = eY; // reference year for YoY comparison
+
   let extraFilter = "";
   if (branchId) extraFilter += ` AND t.branch_id = ${parseInt(branchId as string)}`;
   if (departmentId) extraFilter += ` AND t.department_id = ${parseInt(departmentId as string)}`;
   if (categoryId) extraFilter += ` AND t.category_id = ${parseInt(categoryId as string)}`;
 
-  // Month-by-month totals (last 24 months)
+  // Month-by-month totals
   const monthly = db.prepare(`
     SELECT
       strftime('%Y-%m', t.created_at) as month,
@@ -221,7 +234,7 @@ router.get("/dashboard/monthly", (req, res) => {
       ROUND(CAST(COUNT(*) - SUM(CASE WHEN t.status IN ('open','in_progress')
         AND (julianday('now') - julianday(t.created_at)) * 24 > 48 THEN 1 ELSE 0 END) AS REAL) * 100 / COUNT(*), 1) as sla_percent
     FROM tickets t
-    WHERE t.created_at >= datetime('now', '-24 months') ${extraFilter}
+    WHERE t.created_at >= '${fromDateStr}' AND t.created_at < '${toDateStr}' ${extraFilter}
     GROUP BY month
     ORDER BY month ASC
   `).all() as Array<{
@@ -237,7 +250,7 @@ router.get("/dashboard/monthly", (req, res) => {
     sla_percent: number;
   }>;
 
-  // Monthly by branch (last 12 months)
+  // Monthly by branch (within selected period)
   const monthlyByBranch = db.prepare(`
     SELECT
       strftime('%Y-%m', t.created_at) as month,
@@ -245,12 +258,12 @@ router.get("/dashboard/monthly", (req, res) => {
       COUNT(*) as count
     FROM tickets t
     LEFT JOIN branches b ON t.branch_id = b.id
-    WHERE t.created_at >= datetime('now', '-12 months') ${extraFilter}
+    WHERE t.created_at >= '${subFromStr}' AND t.created_at < '${toDateStr}' ${extraFilter}
     GROUP BY month, b.id
     ORDER BY month ASC, count DESC
   `).all() as Array<{ month: string; branch: string; count: number }>;
 
-  // Monthly by category (last 12 months)
+  // Monthly by category (within selected period)
   const monthlyByCategory = db.prepare(`
     SELECT
       strftime('%Y-%m', t.created_at) as month,
@@ -258,12 +271,12 @@ router.get("/dashboard/monthly", (req, res) => {
       COUNT(*) as count
     FROM tickets t
     LEFT JOIN categories c ON t.category_id = c.id
-    WHERE t.created_at >= datetime('now', '-12 months') ${extraFilter}
+    WHERE t.created_at >= '${subFromStr}' AND t.created_at < '${toDateStr}' ${extraFilter}
     GROUP BY month, c.id
     ORDER BY month ASC, count DESC
   `).all() as Array<{ month: string; category: string; count: number }>;
 
-  // Monthly by analyst (last 12 months)
+  // Monthly by analyst (within selected period)
   const monthlyByAnalyst = db.prepare(`
     SELECT
       strftime('%Y-%m', t.created_at) as month,
@@ -271,29 +284,29 @@ router.get("/dashboard/monthly", (req, res) => {
       COUNT(*) as count,
       SUM(CASE WHEN t.status = 'closed' THEN 1 ELSE 0 END) as closed
     FROM tickets t
-    WHERE t.created_at >= datetime('now', '-12 months') ${extraFilter}
+    WHERE t.created_at >= '${subFromStr}' AND t.created_at < '${toDateStr}' ${extraFilter}
     GROUP BY month, t.assignee_name
     ORDER BY month ASC, count DESC
   `).all() as Array<{ month: string; analyst: string; count: number; closed: number }>;
 
-  // Top categories all time
+  // Top categories (within selected period)
   const topCategories = db.prepare(`
     SELECT COALESCE(c.name,'Sem Categoria') as label, COUNT(*) as count
     FROM tickets t LEFT JOIN categories c ON t.category_id = c.id
-    WHERE 1=1 ${extraFilter}
+    WHERE t.created_at >= '${fromDateStr}' AND t.created_at < '${toDateStr}' ${extraFilter}
     GROUP BY c.id ORDER BY count DESC LIMIT 5
   `).all() as Array<{ label: string; count: number }>;
 
-  // Top branches all time
+  // Top branches (within selected period)
   const topBranches = db.prepare(`
     SELECT COALESCE(b.name,'Sem Filial') as label, COUNT(*) as count
     FROM tickets t LEFT JOIN branches b ON t.branch_id = b.id
-    WHERE 1=1 ${extraFilter}
+    WHERE t.created_at >= '${fromDateStr}' AND t.created_at < '${toDateStr}' ${extraFilter}
     GROUP BY b.id ORDER BY count DESC LIMIT 5
   `).all() as Array<{ label: string; count: number }>;
 
-  // Year-over-year: current vs previous year
-  const currentYear = new Date().getFullYear();
+  // Year-over-year: reference year vs previous year (based on endDate)
+  const currentYear = refYear;
   const yoyCurrent = (db.prepare(
     `SELECT COUNT(*) as c FROM tickets t WHERE strftime('%Y', t.created_at) = ? ${extraFilter}`
   ).get(String(currentYear)) as { c: number }).c;

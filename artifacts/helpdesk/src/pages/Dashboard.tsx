@@ -158,7 +158,7 @@ function fmtMonthFull(m: string) {
 }
 
 // ─── Monthly PDF export (AGM) ─────────────────────────────────────────────────
-function exportMonthlyPdf(monthly: MonthlyStats) {
+function exportMonthlyPdf(monthly: MonthlyStats, periodLabel?: string) {
   const rows = monthly.monthly.map(r => `
     <tr>
       <td>${fmtMonthFull(r.month)}</td>
@@ -205,7 +205,7 @@ td.sla.nok{color:#dc2626;font-weight:700}
 <button onclick="window.print()" style="background:#6366f1;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer">🖨️ Imprimir / Salvar PDF</button>
 </div>
 <h1>📊 Support Hub — Relatório AGM · Mês a Mês</h1>
-<p class="subtitle">Gerado em ${new Date().toLocaleString("pt-BR")} · Últimos 24 meses</p>
+<p class="subtitle">Gerado em ${new Date().toLocaleString("pt-BR")} · ${periodLabel ?? "Últimos 24 meses"}</p>
 
 <h2>Comparativo Ano a Ano</h2>
 <div class="yoy">
@@ -558,15 +558,24 @@ export default function Dashboard() {
   const [filterBranch, setFilterBranch] = useState("all");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  // AGM period picker state
+  const _now = new Date();
+  const [agmMonths, setAgmMonths] = useState("24");
+  const [agmEndYear, setAgmEndYear] = useState(String(_now.getFullYear()));
+  const [agmEndMonth, setAgmEndMonth] = useState(String(_now.getMonth() + 1).padStart(2, "0"));
+
   const loadMonthly = useCallback(async () => {
     setMonthlyLoading(true);
     try {
-      const params: Record<string, number> = {};
+      const params: Record<string, any> = {
+        months: parseInt(agmMonths),
+        endDate: `${agmEndYear}-${agmEndMonth}`,
+      };
       if (filterBranch !== "all") params.branchId = parseInt(filterBranch);
       const m = await API.monthlyStats(params);
       setMonthlyData(m);
     } catch { /**/ } finally { setMonthlyLoading(false); }
-  }, [filterBranch]);
+  }, [filterBranch, agmMonths, agmEndYear, agmEndMonth]);
 
   const load = useCallback(async () => {
     setLoading(true);

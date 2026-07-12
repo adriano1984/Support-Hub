@@ -79,11 +79,13 @@ export const API = {
   getDashboardRecent: () => apiFetch<RecentActivity[]>("/api/dashboard/recent"),
   recent: () => apiFetch("/api/dashboard/recent"),
   exportTickets: () => apiFetch<any[]>("/api/dashboard/export"),
-  monthlyStats: (params?: { branchId?: number; departmentId?: number; categoryId?: number }) => {
+  monthlyStats: (params?: { branchId?: number; departmentId?: number; categoryId?: number; months?: number; endDate?: string }) => {
     const qs = new URLSearchParams();
     if (params?.branchId) qs.set("branchId", String(params.branchId));
     if (params?.departmentId) qs.set("departmentId", String(params.departmentId));
     if (params?.categoryId) qs.set("categoryId", String(params.categoryId));
+    if (params?.months) qs.set("months", String(params.months));
+    if (params?.endDate) qs.set("endDate", params.endDate);
     return apiFetch<MonthlyStats>(`/api/dashboard/monthly${qs.toString() ? "?" + qs : ""}`);
   },
 
