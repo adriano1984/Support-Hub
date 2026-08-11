@@ -206,6 +206,9 @@ export function initDatabase() {
   // Terminologia configurável
   cfg("client_label", "Colaborador");
   cfg("clients_label", "Colaboradores");
+  // O aviso de aguardando resposta foi desativado; a sessão continua podendo
+  // ser encerrada por inatividade sem enviar uma mensagem intermediária.
+  db.prepare("UPDATE auto_messages SET active = 0 WHERE trigger = 'inactivity_warning'").run();
 
   // Seed de dados de referência
   const row = db.prepare("SELECT value FROM settings WHERE key = 'seed_version'").get() as { value: string } | undefined;
@@ -472,6 +475,9 @@ function seedDefaults() {
     ["invalid_option", "Opção inválida. Por favor, escolha um número da lista."],
   ];
   defaults.forEach(([trigger, content]) => insMsg.run(trigger, content));
+  // Esse aviso foi desativado por decisão do produto e não deve voltar quando
+  // os dados de referência forem recriados.
+  db.prepare("UPDATE auto_messages SET active = 0 WHERE trigger = 'inactivity_warning'").run();
 
   db.exec("PRAGMA foreign_keys = ON");
 }

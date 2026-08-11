@@ -359,6 +359,66 @@ export async function sendAudioMessage(phone: string, audioBuffer: Buffer): Prom
   }
 }
 
+export async function sendVideoMessage(phone: string, videoBuffer: Buffer, mimetype = "video/webm"): Promise<boolean> {
+  if (!state.socket || state.status !== "connected") {
+    logger.warn("Cannot send video — WhatsApp not connected");
+    return false;
+  }
+  try {
+    const jid = phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+    const result = await state.socket.sendMessage(jid, {
+      video: videoBuffer,
+      mimetype,
+    });
+    if (result?.key?.id) trackSentId(result.key.id);
+    return true;
+  } catch (err) {
+    logger.error({ err, phone }, "Failed to send video message");
+    return false;
+  }
+}
+
+export async function sendImageMessage(phone: string, imageBuffer: Buffer, mimetype: string, caption?: string): Promise<boolean> {
+  if (!state.socket || state.status !== "connected") {
+    logger.warn("Cannot send image — WhatsApp not connected");
+    return false;
+  }
+  try {
+    const jid = phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+    const result = await state.socket.sendMessage(jid, {
+      image: imageBuffer,
+      mimetype,
+      caption: caption || undefined,
+    });
+    if (result?.key?.id) trackSentId(result.key.id);
+    return true;
+  } catch (err) {
+    logger.error({ err, phone }, "Failed to send image message");
+    return false;
+  }
+}
+
+export async function sendDocumentMessage(phone: string, documentBuffer: Buffer, mimetype: string, fileName: string, caption?: string): Promise<boolean> {
+  if (!state.socket || state.status !== "connected") {
+    logger.warn("Cannot send document — WhatsApp not connected");
+    return false;
+  }
+  try {
+    const jid = phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+    const result = await state.socket.sendMessage(jid, {
+      document: documentBuffer,
+      mimetype,
+      fileName,
+      caption: caption || undefined,
+    });
+    if (result?.key?.id) trackSentId(result.key.id);
+    return true;
+  } catch (err) {
+    logger.error({ err, phone, fileName }, "Failed to send document message");
+    return false;
+  }
+}
+
 // ─── Conversation state per phone ────────────────────────────────────────────
 
 type ConvStep =
@@ -432,7 +492,7 @@ export function getConvMode(phone: string): ConvMode {
   return getConvState(phone).mode;
 }
 
-// ─── Inatividade — 2min aviso + 3min encerrar (APENAS pré-ticket) ─────────────
+// ─── Inatividade — encerra sem enviar aviso (APENAS pré-ticket) ───────────────
 
 function startPreTicketInactivity(phone: string) {
   clearInactivityTimer(phone);
@@ -440,44 +500,28 @@ function startPreTicketInactivity(phone: string) {
   // Captura a geração atual APÓS clearInactivityTimer (que já a incrementou)
   const gen = inactivityGeneration.get(phone) ?? 0;
 
-  const WARN_MS = 2 * 60 * 1000;   // 2 minutos para aviso
-  const CLOSE_MS = 3 * 60 * 1000;  // mais 3 minutos para encerrar
+  const CLOSE_MS = 3 * 60 * 1000;
 
   const timers: InactivityState = { warnTimer: null, closeTimer: null };
 
-  timers.warnTimer = setTimeout(async () => {
-    timers.warnTimer = null;
+  timers.closeTimer = setTimeout(async () => {
+    timers.closeTimer = null;
 
     // Se o cliente respondeu entre a criação deste timer e agora, a geração
     // foi incrementada — este callback está obsoleto, não fazer nada.
     if ((inactivityGeneration.get(phone) ?? 0) !== gen) return;
 
-    const conv = getConvState(phone);
-    if (conv.ticketId) { clearInactivityTimer(phone); return; }
+    inactivityTimers.delete(phone);
+    const convAfter = getConvState(phone);
+    if (convAfter.ticketId) return;
 
-    const warnMsg = getAutoMessage("inactivity_warning");
-    if (warnMsg) await sendMessage(phone, warnMsg);
-    savePreTicketMessage(phone, "outbound", "text", warnMsg || "Aviso de inatividade", "Sistema");
+    const closeMsg = getAutoMessage("inactivity_closed");
+    if (closeMsg) await sendMessage(phone, closeMsg);
+    savePreTicketMessage(phone, "outbound", "text", closeMsg || "Encerrado por inatividade", "Sistema");
 
-    timers.closeTimer = setTimeout(async () => {
-      timers.closeTimer = null;
-
-      // Verificação dupla: se o cliente respondeu após o aviso, a geração mudou
-      if ((inactivityGeneration.get(phone) ?? 0) !== gen) return;
-
-      inactivityTimers.delete(phone);
-      const convAfter = getConvState(phone);
-      if (convAfter.ticketId) return;
-
-      const closeMsg = getAutoMessage("inactivity_closed");
-      if (closeMsg) await sendMessage(phone, closeMsg);
-      savePreTicketMessage(phone, "outbound", "text", closeMsg || "Encerrado por inatividade", "Sistema");
-
-      resetConv(phone, "closed");
-      logger.info({ phone }, "Pre-ticket inactivity timeout — session closed");
-    }, CLOSE_MS);
-
-  }, WARN_MS);
+    resetConv(phone, "closed");
+    logger.info({ phone }, "Pre-ticket inactivity timeout — session closed without warning");
+  }, CLOSE_MS);
 
   inactivityTimers.set(phone, timers);
 }

@@ -138,6 +138,16 @@ export const API = {
       method: "POST",
       body: JSON.stringify({ audioBase64 }),
     }),
+  sendVideoMessage: (ticketId: number, videoBase64: string, mimeType = "video/webm") =>
+    apiFetch<{ success: boolean; sent: boolean }>(`/api/tickets/${ticketId}/video`, {
+      method: "POST",
+      body: JSON.stringify({ videoBase64, mimeType }),
+    }),
+  sendMediaMessage: (ticketId: number, mediaBase64: string, mediaType: "image" | "document", mimeType: string, fileName: string, caption = "") =>
+    apiFetch<{ success: boolean; sent: boolean; mediaUrl: string }>(`/api/tickets/${ticketId}/media`, {
+      method: "POST",
+      body: JSON.stringify({ mediaBase64, mediaType, mimeType, fileName, caption }),
+    }),
 };
 
 export interface User {
@@ -179,6 +189,7 @@ export interface DashboardStats {
   totalToday: number;
   totalAll: number;
   avgResolutionHours: number | null;
+  avgResolutionMinutes?: number | null;
   avgFirstResponseHours: number | null;
   totalReopened: number;
   totalTransfers: number;

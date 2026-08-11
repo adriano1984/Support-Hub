@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { API, type RecentActivity, type Ticket as TicketType } from "@/lib/api";
+import { APP_VERSION_LABEL } from "@/lib/version";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -543,6 +544,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Ticket className="h-5 w-5" />
         </div>
         <span className="text-xl font-bold tracking-tight">Support Hub</span>
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0">{APP_VERSION_LABEL}</Badge>
       </div>
 
       <div className="flex flex-col gap-4 flex-1">
@@ -650,6 +652,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 font-semibold flex-1">
             <Ticket className="h-5 w-5 text-primary" />
             <span>Support Hub</span>
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">{APP_VERSION_LABEL}</Badge>
           </div>
           <div className="flex items-center gap-1 ml-auto">
             <GlobalSearch />

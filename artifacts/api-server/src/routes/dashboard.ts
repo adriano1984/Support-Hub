@@ -120,6 +120,7 @@ router.get("/dashboard/stats", (req, res) => {
     closedToday,
     waitingClient,
     avgResolutionHours: avgResRow.avg ?? null,
+    avgResolutionMinutes: avgResRow.avg != null ? Math.round(avgResRow.avg * 60) : null,
     avgFirstResponseHours: avgFirstRow.avg ?? null,
     totalReopened: reopenedRow.c,
     totalTransfers: transfersRow.c,

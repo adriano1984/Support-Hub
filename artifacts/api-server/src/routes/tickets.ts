@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { db, addAuditLog } from "../lib/database";
-import { sendMessage, sendAudioMessage, notifyStatusChange, setConvMode, getConvMode } from "../lib/whatsapp";
+import { sendMessage, sendAudioMessage, sendVideoMessage, sendImageMessage, sendDocumentMessage, notifyStatusChange, setConvMode, getConvMode } from "../lib/whatsapp";
 import { parseAuthHeader } from "../lib/auth";
 import { logger } from "../lib/logger";
 import { processarAnalista, gerarIA, analyzeTicketLocally } from "../overlay";
@@ -175,6 +175,11 @@ router.post("/tickets/:id/assign", (req, res): void => {
   const actor = parseAuthHeader(req.headers.authorization);
   const ip = req.ip ?? req.socket.remoteAddress ?? null;
 
+  if (!actor || !["admin", "manager", "supervisor"].includes(actor.role)) {
+    res.status(403).json({ error: "Apenas Administrador, Gestor ou Supervisor podem atribuir chamados." });
+    return;
+  }
+
   const ticket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
   if (!ticket) { res.status(404).json({ error: "Chamado não encontrado" }); return; }
 
@@ -187,6 +192,10 @@ router.post("/tickets/:id/assign", (req, res): void => {
 
   const targetUser = db.prepare("SELECT * FROM users WHERE id = ? AND active = 1").get(parseInt(userId)) as any;
   if (!targetUser) { res.status(404).json({ error: "Usuário não encontrado" }); return; }
+  if (!["technician", "attendant"].includes(targetUser.role)) {
+    res.status(400).json({ error: "O chamado deve ser atribuído a um analista." });
+    return;
+  }
 
   db.prepare("UPDATE tickets SET assigned_to = ?, assignee_name = ?, updated_at = datetime('now') WHERE id = ?").run(targetUser.id, targetUser.name, id);
   db.prepare("INSERT INTO activity_log (ticket_id, action, detail) VALUES (?, 'assigned', ?)").run(id, `Chamado atribuído a ${targetUser.name} por ${actor?.name ?? "Admin"}`);
@@ -444,6 +453,104 @@ router.post("/tickets/:id/audio", async (req, res): Promise<void> => {
   });
 
   res.json({ success: true, sent });
+});
+
+// ─── Send video message ────────────────────────────────────────────────────────
+router.post("/tickets/:id/video", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  const { videoBase64, mimeType = "video/webm" } = req.body;
+  const user = parseAuthHeader(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Não autenticado" }); return; }
+  if (!videoBase64) { res.status(400).json({ error: "Dados de vídeo não fornecidos" }); return; }
+
+  const ticket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
+  if (!ticket) { res.status(404).json({ error: "Chamado não encontrado" }); return; }
+  if (ticket.status !== "in_progress") {
+    res.status(400).json({ error: "Altere o status para 'Em Atendimento' antes de enviar mensagens." });
+    return;
+  }
+
+  const videoBuffer = Buffer.from(videoBase64, "base64");
+  if (videoBuffer.length === 0) { res.status(400).json({ error: "Vídeo vazio" }); return; }
+
+  if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  const tag = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const normalizedMime = String(mimeType).split(";")[0].toLowerCase();
+  const ext = normalizedMime.includes("mp4") ? "mp4" : "webm";
+  const filename = `${tag}.${ext}`;
+  fs.writeFileSync(path.join(MEDIA_DIR, filename), videoBuffer);
+  const mediaUrl = `/api/media/${filename}`;
+
+  const sent = await sendVideoMessage(ticket.whatsapp_phone, videoBuffer, normalizedMime || "video/webm");
+  db.prepare(
+    "INSERT INTO messages (ticket_id, direction, type, content, sender_name, media_url, media_mime) VALUES (?, 'outbound', 'video', ?, ?, ?, ?)"
+  ).run(id, `Vídeo enviado por ${user.name}`, user.name, mediaUrl, normalizedMime || "video/webm");
+  db.prepare("UPDATE tickets SET last_message_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id);
+  broadcastEvent("message:new", { ticketId: id });
+  addAuditLog({
+    userId: user.userId, userName: user.name, action: "ticket_replied",
+    entity: "ticket", entityId: id, detail: `Chamado #${ticket.ticket_number}: vídeo enviado`, ip: req.ip ?? null,
+  });
+
+  res.json({ success: true, sent });
+});
+
+// ─── Send image or document message ───────────────────────────────────────────
+router.post("/tickets/:id/media", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  const { mediaBase64, mediaType, mimeType = "application/octet-stream", fileName = "arquivo", caption = "" } = req.body;
+  const user = parseAuthHeader(req.headers.authorization);
+  if (!user) { res.status(401).json({ error: "Não autenticado" }); return; }
+  if (!mediaBase64 || !["image", "document"].includes(mediaType)) {
+    res.status(400).json({ error: "Imagem ou documento não fornecido" }); return;
+  }
+
+  const ticket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id) as any;
+  if (!ticket) { res.status(404).json({ error: "Chamado não encontrado" }); return; }
+  if (ticket.status !== "in_progress") {
+    res.status(400).json({ error: "Altere o status para 'Em Atendimento' antes de enviar mensagens." });
+    return;
+  }
+
+  const buffer = Buffer.from(String(mediaBase64), "base64");
+  const normalizedMime = String(mimeType).split(";")[0].toLowerCase();
+  const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "arquivo";
+  const maxBytes = mediaType === "image" ? 15 * 1024 * 1024 : 25 * 1024 * 1024;
+  if (!buffer.length || buffer.length > maxBytes) {
+    res.status(413).json({ error: `Arquivo inválido ou maior que ${mediaType === "image" ? "15" : "25"} MB.` });
+    return;
+  }
+
+  if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  const tag = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const extFromName = path.extname(safeName).toLowerCase().replace(/[^a-z0-9.]/g, "");
+  const mimeExt: Record<string, string> = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "application/pdf": ".pdf",
+  };
+  const ext = extFromName || mimeExt[normalizedMime] || ".bin";
+  const storedName = `${tag}${ext}`;
+  fs.writeFileSync(path.join(MEDIA_DIR, storedName), buffer);
+  const mediaUrl = `/api/media/${storedName}`;
+  const content = caption.trim() || (mediaType === "image" ? `🖼️ Imagem enviada por ${user.name}` : `📄 Documento enviado por ${user.name}: ${safeName}`);
+  const sent = mediaType === "image"
+    ? await sendImageMessage(ticket.whatsapp_phone, buffer, normalizedMime || "application/octet-stream", caption.trim())
+    : await sendDocumentMessage(ticket.whatsapp_phone, buffer, normalizedMime || "application/octet-stream", safeName, caption.trim());
+
+  db.prepare(
+    "INSERT INTO messages (ticket_id, direction, type, content, sender_name, media_url, media_mime) VALUES (?, 'outbound', ?, ?, ?, ?, ?)"
+  ).run(id, mediaType, content, user.name, mediaUrl, normalizedMime);
+  db.prepare("UPDATE tickets SET last_message_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id);
+  broadcastEvent("message:new", { ticketId: id });
+  addAuditLog({
+    userId: user.userId, userName: user.name, action: "ticket_replied",
+    entity: "ticket", entityId: id, detail: `Chamado #${ticket.ticket_number}: ${mediaType === "image" ? "imagem" : "documento"} enviado`, ip: req.ip ?? null,
+  });
+
+  res.json({ success: true, sent, mediaUrl });
 });
 
 // ─── Block reply if not in_progress (enforce on backend too) ──────────────────

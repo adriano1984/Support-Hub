@@ -776,7 +776,7 @@ export default function Dashboard() {
           <TabsTrigger value="filiais">Filiais</TabsTrigger>
           <TabsTrigger value="categorias">Categorias</TabsTrigger>
           <TabsTrigger value="departamentos">Departamentos</TabsTrigger>
-          <TabsTrigger value="clientes">Clientes (Top 10)</TabsTrigger>
+           <TabsTrigger value="clientes">Top 10 Chamados por Volume</TabsTrigger>
           <TabsTrigger value="status">Por Status</TabsTrigger>
           <TabsTrigger value="equipe">Equipe</TabsTrigger>
           <TabsTrigger value="tendencia">Tendência</TabsTrigger>
@@ -798,7 +798,7 @@ export default function Dashboard() {
                   <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
                     <CalendarDays className="h-4 w-4" /> Painel AGM — Análise Mês a Mês
                   </p>
-                  <p className="text-xs text-indigo-500/80 mt-0.5">Últimos 24 meses · dados consolidados para apresentação em assembleia</p>
+                   <p className="text-xs text-indigo-500/80 mt-0.5">{agmMonths} meses até {agmEndMonth}/{agmEndYear} · dados consolidados para apresentação em assembleia</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <Button size="sm" variant="outline" className="h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
@@ -903,13 +903,13 @@ export default function Dashboard() {
 
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-teal-500" /> Tempo Médio de Resolução (horas)
+                     <CardTitle className="text-sm font-medium flex items-center gap-2">
+                       <Clock className="h-4 w-4 text-teal-500" /> Tempo Médio de Resolução (minutos)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={200}>
-                      <AreaChart data={monthlyData.monthly.map(r => ({ name: fmtMonth(r.month), tmr: r.avg_resolution_hours }))} margin={{ right: 8 }}>
+                     <AreaChart data={monthlyData.monthly.map(r => ({ name: fmtMonth(r.month), tmr: r.avg_resolution_hours != null ? Math.round(r.avg_resolution_hours * 60) : null }))} margin={{ right: 8 }}>
                         <defs>
                           <linearGradient id="tmrGrad" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.25} />
@@ -918,8 +918,8 @@ export default function Dashboard() {
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" tick={{ fontSize: 9 }} />
-                        <YAxis tick={{ fontSize: 9 }} unit="h" width={32} />
-                        <Tooltip formatter={(v: any) => [v != null ? `${v}h` : "—", "TMR"]} />
+                         <YAxis tick={{ fontSize: 9 }} unit="min" width={40} />
+                         <Tooltip formatter={(v: any) => [v != null ? `${v} min` : "—", "TMR"]} />
                         <Area type="monotone" dataKey="tmr" stroke="#14b8a6" strokeWidth={2} fill="url(#tmrGrad)" dot={{ r: 3, fill: "#14b8a6" }} />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -1038,7 +1038,7 @@ export default function Dashboard() {
                               {r.sla_percent}%
                             </td>
                             <td className={`px-3 py-2 text-right font-mono ${r.sla_breached > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>{r.sla_breached}</td>
-                            <td className="px-3 py-2 text-right font-mono text-teal-600 dark:text-teal-400">{r.avg_resolution_hours != null ? `${r.avg_resolution_hours}h` : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-teal-600 dark:text-teal-400">{r.avg_resolution_hours != null ? `${Math.round(r.avg_resolution_hours * 60)} min` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono">{r.avg_first_response_min != null ? `${r.avg_first_response_min}min` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono">{r.total_reopened}</td>
                             <td className="px-3 py-2 text-right">
@@ -1063,7 +1063,7 @@ export default function Dashboard() {
                           : 0;
                         const avgTmr = (() => {
                           const valid = monthlyData.monthly.filter(r => r.avg_resolution_hours != null);
-                          return valid.length > 0 ? (valid.reduce((s, r) => s + (r.avg_resolution_hours ?? 0), 0) / valid.length).toFixed(1) : null;
+                           return valid.length > 0 ? Math.round((valid.reduce((s, r) => s + (r.avg_resolution_hours ?? 0), 0) / valid.length) * 60) : null;
                         })();
                         const resolRate = tot.opened > 0 ? Math.round((tot.closed / tot.opened) * 100) : 0;
                         return (
@@ -1074,7 +1074,7 @@ export default function Dashboard() {
                             <td className="px-3 py-2.5 text-right font-mono">—</td>
                             <td className={`px-3 py-2.5 text-right font-mono ${avgSla >= 90 ? "text-green-600" : "text-amber-600"}`}>{avgSla}%</td>
                             <td className="px-3 py-2.5 text-right font-mono text-red-600 dark:text-red-400">{tot.breached}</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-teal-600 dark:text-teal-400">{avgTmr != null ? `${avgTmr}h` : "—"}</td>
+                             <td className="px-3 py-2.5 text-right font-mono text-teal-600 dark:text-teal-400">{avgTmr != null ? `${avgTmr} min` : "—"}</td>
                             <td className="px-3 py-2.5 text-right font-mono">—</td>
                             <td className="px-3 py-2.5 text-right font-mono">{tot.reopened}</td>
                             <td className="px-3 py-2.5 text-right font-mono">{resolRate}%</td>

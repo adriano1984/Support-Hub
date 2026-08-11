@@ -10,7 +10,7 @@ import {
   ArrowLeft, Send, StickyNote, FileText, Image as ImageIcon, Music, Video,
   Bot, UserCheck, Store, UserCircle, Loader2, BookText, Search, X,
   ChevronLeft, ChevronRight, Star, AlertTriangle, Clock, CheckCircle2, CircleEllipsis,
-  MessageSquare, Activity, Sparkles, Mic, Square
+  MessageSquare, Activity, Sparkles, Mic, Square, Paperclip, FileUp
 } from "lucide-react";
 import { useTicketNavigation } from "@/contexts/TicketNavigationContext";
 import { useToast } from "@/hooks/use-toast";
@@ -341,10 +341,16 @@ export default function TicketDetail() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioSending, setAudioSending] = useState(false);
+  const [videoSending, setVideoSending] = useState(false);
+  const [recordingType, setRecordingType] = useState<"audio" | "video" | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [lightbox, setLightbox] = useState<{ src: string; type: "image" | "video" | "pdf" | "audio"; mime?: string } | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; type: "image" | "video" | "pdf" | "audio" | "document"; mime?: string; name?: string } | null>(null);
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [mediaSending, setMediaSending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const clientLabel = useClientLabel();
 
   const { data: detail, isLoading } = useGetTicket(ticketId, {
@@ -433,11 +439,18 @@ export default function TicketDetail() {
   };
 
   const handleSend = () => {
+    if (effectiveMode === "reply" && attachment) {
+      void sendAttachment(attachment);
+      return;
+    }
     if (effectiveMode === "reply" && replyText.trim()) {
       replyMutation.mutate({ id: ticketId, data: { message: replyText } }, {
         onSuccess: () => {
           setReplyText("");
           queryClient.invalidateQueries({ queryKey: getGetTicketQueryKey(ticketId) });
+          window.setTimeout(() => {
+            composerRef.current?.focus();
+          }, 0);
         }
       });
     } else if (effectiveMode === "note" && noteText.trim()) {
@@ -481,10 +494,14 @@ export default function TicketDetail() {
     }
   };
 
-  const startRecording = async () => {
+  const startRecording = async (type: "audio" | "video" = "audio") => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = getBestAudioMime();
+      const stream = await navigator.mediaDevices.getUserMedia(type === "video" ? { audio: true, video: true } : { audio: true });
+      const mimeType = type === "video"
+        ? (["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find(t => {
+            try { return MediaRecorder.isTypeSupported(t); } catch { return false; }
+          }) ?? "")
+        : getBestAudioMime();
       const options: MediaRecorderOptions = mimeType ? { mimeType } : {};
       const mr = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mr;
@@ -493,14 +510,16 @@ export default function TicketDetail() {
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || mimeType });
-        await sendAudioBlob(blob);
+        if (type === "video") await sendVideoBlob(blob);
+        else await sendAudioBlob(blob);
       };
       mr.start();
       setIsRecording(true);
+      setRecordingType(type);
       setRecordingSeconds(0);
       recordingTimerRef.current = setInterval(() => setRecordingSeconds(s => s + 1), 1000);
     } catch {
-      toast({ title: "Erro", description: "Não foi possível acessar o microfone.", variant: "destructive" });
+      toast({ title: "Erro", description: type === "video" ? "Não foi possível acessar câmera e microfone." : "Não foi possível acessar o microfone.", variant: "destructive" });
     }
   };
 
@@ -508,6 +527,7 @@ export default function TicketDetail() {
     if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
+    setRecordingType(null);
     setRecordingSeconds(0);
   };
 
@@ -526,10 +546,75 @@ export default function TicketDetail() {
       await API.sendAudioMessage(ticketId, base64);
       toast({ title: "Áudio enviado ✓", description: "Mensagem de voz enviada com sucesso." });
       queryClient.invalidateQueries({ queryKey: getGetTicketQueryKey(ticketId) });
+      window.setTimeout(() => composerRef.current?.focus(), 0);
     } catch (err: any) {
       toast({ title: "Erro", description: err.message ?? "Falha ao enviar áudio.", variant: "destructive" });
     } finally {
       setAudioSending(false);
+    }
+  };
+
+  const sendVideoBlob = async (blob: Blob) => {
+    setVideoSending(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await API.sendVideoMessage(ticketId, base64, blob.type || "video/webm");
+      toast({ title: "Vídeo enviado", description: "Vídeo enviado com sucesso." });
+      queryClient.invalidateQueries({ queryKey: getGetTicketQueryKey(ticketId) });
+      window.setTimeout(() => composerRef.current?.focus(), 0);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message ?? "Falha ao enviar vídeo.", variant: "destructive" });
+    } finally {
+      setVideoSending(false);
+    }
+  };
+
+  const sendAttachment = async (file: File) => {
+    if (ticket.status !== "in_progress") return;
+    setMediaSending(true);
+    try {
+      const mediaType = file.type.startsWith("image/") ? "image" : "document";
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(",")[1] ?? "");
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await API.sendMediaMessage(ticketId, base64, mediaType, file.type || "application/octet-stream", file.name || "arquivo");
+      setAttachment(null);
+      toast({ title: mediaType === "image" ? "Imagem enviada" : "Documento enviado" });
+      queryClient.invalidateQueries({ queryKey: getGetTicketQueryKey(ticketId) });
+      window.setTimeout(() => composerRef.current?.focus(), 0);
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar arquivo", description: err.message ?? "Não foi possível enviar o arquivo.", variant: "destructive" });
+    } finally {
+      setMediaSending(false);
+    }
+  };
+
+  const chooseAttachment = (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/") && !file.type.startsWith("application/") && !file.type.startsWith("text/")) {
+      toast({ title: "Arquivo não suportado", description: "Escolha uma imagem ou documento.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "O limite é de 25 MB.", variant: "destructive" });
+      return;
+    }
+    setAttachment(file);
+  };
+
+  const handleComposerPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pastedImage = Array.from(event.clipboardData.files).find(file => file.type.startsWith("image/"));
+    if (pastedImage) {
+      event.preventDefault();
+      chooseAttachment(pastedImage);
     }
   };
 
@@ -602,12 +687,15 @@ export default function TicketDetail() {
         );
       }
       if (msg.type === "document") {
-        const isPdf = msg.mediaUrl.toLowerCase().endsWith(".pdf") || caption.toLowerCase().includes(".pdf");
+        const mediaMime = (msg as any).mediaMime as string | null;
+        const isPdf = mediaMime?.includes("pdf") || msg.mediaUrl.toLowerCase().endsWith(".pdf") || caption.toLowerCase().includes(".pdf");
         return (
           <div className="flex items-center gap-2 text-sm">
             <FileText className="h-4 w-4 shrink-0 opacity-70" />
             <button
-              onClick={() => setLightbox({ src: msg.mediaUrl!, type: isPdf ? "pdf" : "pdf" })}
+              onClick={() => isPdf
+                ? setLightbox({ src: msg.mediaUrl!, type: "pdf", mime: mediaMime ?? undefined })
+                : window.open(msg.mediaUrl!, "_blank", "noopener,noreferrer")}
               className="underline hover:opacity-80 truncate text-left"
             >
               {caption || "Documento"}
@@ -717,7 +805,7 @@ export default function TicketDetail() {
         )}
 
         {(() => {
-          const isAdminUser = ["admin", "manager"].includes(user?.role ?? "");
+          const isAdminUser = ["admin", "manager", "supervisor"].includes(user?.role ?? "");
           const ALL_STATUSES = ["open", "in_progress", "closed"] as const;
           const STATUS_FLOW: Record<string, string[]> = {
             open:        ["open", "in_progress"],
@@ -848,7 +936,32 @@ export default function TicketDetail() {
                   </div>
                 )}
               </div>
-              <form className="flex items-start gap-2" onSubmit={(e) => { e.preventDefault(); handleSend(); }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+                onChange={(event) => {
+                  chooseAttachment(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+              {attachment && (
+                <div className="mb-2 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                  {attachment.type.startsWith("image/") ? <ImageIcon className="h-4 w-4 text-primary" /> : <FileText className="h-4 w-4 text-primary" />}
+                  <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                  <span className="text-muted-foreground">{(attachment.size / 1024 / 1024).toFixed(1)} MB</span>
+                  <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAttachment(null)} aria-label="Remover anexo">
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+              <form
+                className="flex items-start gap-2"
+                onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); chooseAttachment(e.dataTransfer.files?.[0]); }}
+              >
                 {effectiveMode === "reply" && (
                   <CannedResponsePicker
                     onSelect={text => setReplyText(text)}
@@ -868,6 +981,12 @@ export default function TicketDetail() {
                   }
                   value={effectiveMode === "reply" ? replyText : noteText}
                   onChange={(e) => effectiveMode === "reply" ? setReplyText(e.target.value) : setNoteText(e.target.value)}
+                  ref={composerRef}
+                  lang="pt-BR"
+                  spellCheck={true}
+                  autoCorrect="on"
+                  autoCapitalize="sentences"
+                  onPaste={handleComposerPaste}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
                       e.preventDefault();
@@ -877,8 +996,26 @@ export default function TicketDetail() {
                   className={`flex-1 resize-none rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring transition bg-background ${
                     effectiveMode === "note" ? "border-yellow-500/50 focus:ring-yellow-500 bg-yellow-500/5" : ""
                   }`}
-                  disabled={replyMutation.isPending || noteMutation.isPending || (effectiveMode === "reply" && ticket.status !== "in_progress")}
+                   disabled={replyMutation.isPending || noteMutation.isPending || mediaSending || (effectiveMode === "reply" && ticket.status !== "in_progress")}
                 />
+                {effectiveMode === "reply" && ticket.status === "in_progress" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="self-end h-10 w-10 p-0 shrink-0"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={mediaSending || audioSending || videoSending}
+                        aria-label="Anexar imagem ou documento"
+                      >
+                        {mediaSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Anexar imagem ou documento — também aceita Ctrl/Cmd+V</TooltipContent>
+                  </Tooltip>
+                )}
                 {/* Mic button — only in reply mode when ticket is in_progress */}
                 {effectiveMode === "reply" && ticket.status === "in_progress" && (
                   <Tooltip>
@@ -887,8 +1024,8 @@ export default function TicketDetail() {
                         type="button"
                         size="sm"
                         variant={isRecording ? "destructive" : "outline"}
-                        onClick={isRecording ? stopRecording : startRecording}
-                        disabled={audioSending}
+                        onClick={isRecording ? stopRecording : () => startRecording("audio")}
+                        disabled={audioSending || videoSending}
                         className="self-end h-10 w-10 p-0 shrink-0"
                       >
                         {audioSending
@@ -903,8 +1040,25 @@ export default function TicketDetail() {
                     </TooltipContent>
                   </Tooltip>
                 )}
+                {effectiveMode === "reply" && ticket.status === "in_progress" && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={isRecording && recordingType === "video" ? "destructive" : "outline"}
+                        onClick={isRecording && recordingType === "video" ? stopRecording : () => startRecording("video")}
+                        disabled={audioSending || videoSending || (isRecording && recordingType === "audio")}
+                        className="self-end h-10 w-10 p-0 shrink-0"
+                      >
+                        {videoSending ? <Loader2 className="h-4 w-4 animate-spin" /> : isRecording && recordingType === "video" ? <Square className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{isRecording && recordingType === "video" ? `Parar vídeo (${recordingSeconds}s)` : "Gravar vídeo"}</TooltipContent>
+                  </Tooltip>
+                )}
                 <Button type="submit"
-                  disabled={replyMutation.isPending || noteMutation.isPending || (effectiveMode === "reply" && (!replyText.trim() || ticket.status !== "in_progress")) || (effectiveMode === "note" && !noteText.trim())}
+                  disabled={replyMutation.isPending || noteMutation.isPending || mediaSending || (effectiveMode === "reply" && (!replyText.trim() && !attachment || ticket.status !== "in_progress")) || (effectiveMode === "note" && !noteText.trim())}
                   className={effectiveMode === "note" ? "bg-yellow-600 hover:bg-yellow-700 text-white self-end" : "self-end"}>
                   <Send className="h-4 w-4" />
                 </Button>
@@ -912,7 +1066,7 @@ export default function TicketDetail() {
               {isRecording && (
                 <div className="mt-2 flex items-center gap-2 text-xs text-destructive animate-pulse">
                   <div className="h-2 w-2 rounded-full bg-destructive" />
-                  Gravando... {recordingSeconds}s — clique em ■ para parar e enviar
+                  Gravando {recordingType === "video" ? "vídeo" : "áudio"}... {recordingSeconds}s — clique em ■ para parar e enviar
                 </div>
               )}
             </div>
